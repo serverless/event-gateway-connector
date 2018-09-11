@@ -60,6 +60,17 @@
   version = "1.0.1"
 
 [[projects]]
+  digest = "1:25b462c87805977fea353aa236878368aadc0a8b4e2f2d96ee6a69f18bac0cb4"
+  name = "go.etcd.io/etcd"
+  packages = [
+    "clientv3",
+    "clientv3/namespace",
+  ]
+  pruneopts = "UT"
+  revision = "fca8add78a9d926166eb739b8e4a124434025ba3"
+  version = "v3.3.9"
+
+[[projects]]
   digest = "1:777e729b475d3895c7229552aa10076f0d177daf37c0a72258006d046d329960"
   name = "go.uber.org/atomic"
   packages = ["."]
@@ -171,6 +182,8 @@
     "github.com/coreos/etcd/clientv3/namespace",
     "github.com/julienschmidt/httprouter",
     "github.com/segmentio/ksuid",
+    "go.etcd.io/etcd/clientv3",
+    "go.etcd.io/etcd/clientv3/namespace",
     "go.uber.org/zap",
   ]
   solver-name = "gps-cdcl"
