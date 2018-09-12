@@ -9,8 +9,9 @@ import (
 
 func TestInitialWorkerConnection(t *testing.T) {
 	conns := make(chan *connection.Connection, 100)
+	done := make(chan bool)
 
 	Convey("test out initializing the workers", t, func() {
-		So(func() { StartWorkers(conns, 10) }, ShouldNotPanic)
+		So(func() { StartWorkers(10, conns, done) }, ShouldNotPanic)
 	})
 }

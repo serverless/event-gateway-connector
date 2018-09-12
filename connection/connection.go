@@ -5,12 +5,12 @@ type ID string
 
 // Connection is a configuration used by the connector to transport data from source to the EG (target).
 type Connection struct {
-	Space            string           `json:"space"`
-	ID               ID               `json:"connectionId"`
-	Target           string           `json:"target"`
-	Type             string           `json:"type"`
-	AWSKinesisSource AWSKinesisSource `json:"AWSKinesisSource,omitempty"`
-	KafkaSource      KafkaSource      `json:"KafkaSource,omitempty"`
+	Space            string            `json:"space"`
+	ID               ID                `json:"connectionId"`
+	Target           string            `json:"target"`
+	Type             string            `json:"type"`
+	AWSKinesisSource *AWSKinesisSource `json:"AWSKinesisSource,omitempty"`
+	KafkaSource      *KafkaSource      `json:"KafkaSource,omitempty"`
 }
 
 // AWSKinesisSource is a configuration used to configure AWS Kinesis stream as a source.
