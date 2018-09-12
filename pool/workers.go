@@ -1,6 +1,8 @@
 package pool
 
 import (
+	"time"
+
 	"github.com/serverless/event-gateway-connector/connection"
 	"go.uber.org/zap"
 )
@@ -98,7 +100,10 @@ func (w *worker) run() {
 // handleConnection will actually spin up and handle the connection
 func (w *worker) handleConnection() error {
 	// perform the actual connection here
-	w.log.Infof("would be handling the stuff here: %d, %s", w.id, w.conn.Space)
+	for i := 0; i < 3; i++ {
+		w.log.Infof("would be handling the stuff here: %d, %s", w.id, w.conn.Space)
+		time.Sleep(3 * time.Second)
+	}
 
 	return nil
 }
