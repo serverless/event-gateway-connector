@@ -84,11 +84,13 @@ func (w *worker) run() {
 			// defer w.conn.Close()
 			return
 		case w.conn = <-w.recv:
+			w.inUse = true
 			w.log.Infof("worker %d started job:  %s", w.id, w.conn.ID)
 			if err := w.handleConnection(); err != nil {
 				w.log.Errorf("handle connection: %s", err.Error())
 			}
 			w.log.Infof("worker %d finished job: %s", w.id, w.conn.ID)
+			w.inUse = false
 		}
 	}
 }
@@ -96,6 +98,7 @@ func (w *worker) run() {
 // handleConnection will actually spin up and handle the connection
 func (w *worker) handleConnection() error {
 	// perform the actual connection here
+	w.log.Infof("would be handling the stuff here: %d, %s", w.id, w.conn.Space)
 
 	return nil
 }
