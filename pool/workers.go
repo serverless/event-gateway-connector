@@ -35,6 +35,7 @@ func StartWorkers(numWorkers int, conns chan *connection.Connection, done <-chan
 	defer rawLogger.Sync()
 	log := rawLogger.Sugar()
 
+	// define the map of workers to manage
 	m := make(workerMap)
 
 	// errors channel for workers to send back errors
@@ -61,13 +62,16 @@ func StartWorkers(numWorkers int, conns chan *connection.Connection, done <-chan
 			}
 			return nil
 		case c := <-conns:
-			m[tasks].recv <- c
+			m[tasks%numWorkers].recv <- c
 			tasks++
 		case w := <-errors:
-			log.Warnf("received an error from worker %d, error: %s", w.id, w.err.Error())
 			// would need to figure out retry logic here
+			tasks--
+			log.Warnf("received an error from worker %d, error: %s, total: %d", w.id, w.err.Error(), tasks)
+			delete(m, w.id)
 		case c := <-close:
 			log.Infof("closing worker %d", c)
+			tasks--
 		}
 	}
 }
@@ -93,15 +97,18 @@ func (w *worker) run() {
 			w.log.Debugf("trapped done signal for worker %d...", w.id)
 			// defer w.conn.Close()
 			return
-		case w.conn = <-w.recv:
-			w.inUse = true
+		case c := <-w.recv:
+			w.conn = c
+
 			w.log.Infof("worker %d started job:  %s", w.id, w.conn.ID)
 			if err := w.handleConnection(); err != nil {
 				w.errors <- workerError{id: w.id, err: err}
-				continue
+				return
 			}
+
 			w.log.Infof("worker %d finished job: %s", w.id, w.conn.ID)
-			w.inUse = false
+			w.close <- w.id
+			return
 		}
 	}
 }
@@ -114,7 +121,7 @@ func (w *worker) handleConnection() error {
 
 	// perform the actual connection here
 	for i := 0; i < 3; i++ {
-		w.log.Infof("would be handling the stuff here: %d, %s, %s", w.id, w.conn.Space, w.conn.SourceConfig)
+		w.log.Infof("would be handling the stuff here: %d, %+v", w.id, w.conn)
 		time.Sleep(3 * time.Second)
 	}
 
