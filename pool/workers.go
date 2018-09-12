@@ -44,26 +44,10 @@ func StartWorkers(numWorkers int, conns chan *connection.Connection, done <-chan
 			}
 			return nil
 		case c := <-conns:
-			if !checkConnection(c) {
-				log.Errorf("malformed conn payload: %s", c.ID)
-				continue
-			}
 			m[tasks].recv <- c
 			tasks++
 		}
 	}
-}
-
-func checkConnection(conn *connection.Connection) bool {
-	if conn.EventType == "kafka" && conn.KafkaSource == nil {
-		return false
-	}
-
-	if conn.EventType == "awskinesis" && conn.AWSKinesisSource == nil {
-		return false
-	}
-
-	return true
 }
 
 func newWorker(id int, log *zap.SugaredLogger) *worker {
@@ -101,7 +85,7 @@ func (w *worker) run() {
 func (w *worker) handleConnection() error {
 	// perform the actual connection here
 	for i := 0; i < 3; i++ {
-		w.log.Infof("would be handling the stuff here: %d, %s", w.id, w.conn.Space)
+		w.log.Infof("would be handling the stuff here: %d, %s, %s", w.id, w.conn.Space, w.conn.SourceConfig)
 		time.Sleep(3 * time.Second)
 	}
 

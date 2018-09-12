@@ -8,6 +8,18 @@ import (
 	. "github.com/smartystreets/goconvey/convey"
 )
 
+type TestAWSKinesis struct {
+	StreamName         string `json:"streamName"`
+	Region             string `json:"region"`
+	AWSAccessKeyID     string `json:"awsAccessKeyId,omitempty"`
+	AWSSecretAccessKey string `json:"awsSecretAccessKey,omitempty"`
+	AWSSessionToken    string `json:"awsSessionToken,omitempty"`
+}
+
+func (a TestAWSKinesis) Call(payload []byte) ([]byte, error) {
+	return nil, nil
+}
+
 func TestInitialWorkerConnection(t *testing.T) {
 	conns := make(chan *connection.Connection, 100)
 	done := make(chan bool)
@@ -25,11 +37,11 @@ func TestInitialWorkerConnection(t *testing.T) {
 	Convey("test out sending a conn down the channel", t, func() {
 		So(func() { go StartWorkers(10, conns, done) }, ShouldNotPanic)
 		a := &connection.Connection{
-			Space:     "/test_one",
-			ID:        "test_one",
-			Target:    "http://localhost:4001/",
-			EventType: "awskinesis",
-			AWSKinesisSource: &connection.AWSKinesisSource{
+			Space:  "/test_one",
+			ID:     "test_one",
+			Target: "http://localhost:4001/",
+			Type:   "awskinesis",
+			Source: &TestAWSKinesis{
 				StreamName:         "stream_one",
 				Region:             "us-east-1",
 				AWSAccessKeyID:     "key_one",
@@ -39,11 +51,11 @@ func TestInitialWorkerConnection(t *testing.T) {
 		}
 
 		b := &connection.Connection{
-			Space:     "/test_two",
-			ID:        "test_two",
-			Target:    "http://localhost:4001/",
-			EventType: "awskinesis",
-			AWSKinesisSource: &connection.AWSKinesisSource{
+			Space:  "/test_two",
+			ID:     "test_two",
+			Target: "http://localhost:4001/",
+			Type:   "awskinesis",
+			Source: &TestAWSKinesis{
 				StreamName:         "stream_two",
 				Region:             "us-east-1",
 				AWSAccessKeyID:     "key_two",
