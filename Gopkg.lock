@@ -68,14 +68,6 @@
   version = "v1.1"
 
 [[projects]]
-  digest = "1:8fd3a15613c7e70cceff3aa03dd57560dba87c4868864e397d5eb2f14addd3f5"
-  name = "github.com/ogier/pflag"
-  packages = ["."]
-  pruneopts = "UT"
-  revision = "32a05c62658bd1d7c7e75cbc8195de5d585fde0f"
-  version = "v0.0.1"
-
-[[projects]]
   digest = "1:8a3e7525dc0cf0236b163166800ecbc78d6c8c5d7ac956996e7b3bef8cfadc41"
   name = "github.com/segmentio/ksuid"
   packages = ["."]
@@ -218,7 +210,6 @@
     "github.com/coreos/etcd/clientv3",
     "github.com/coreos/etcd/clientv3/namespace",
     "github.com/julienschmidt/httprouter",
-    "github.com/ogier/pflag",
     "github.com/segmentio/ksuid",
     "github.com/smartystreets/goconvey/convey",
     "go.uber.org/zap",
