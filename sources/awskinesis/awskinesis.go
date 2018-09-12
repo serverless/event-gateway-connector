@@ -24,13 +24,17 @@ type AWSKinesis struct {
 	AWSSessionToken    string                  `json:"awsSessionToken,omitempty"`
 }
 
+func init() {
+	connection.RegisterSource(connection.SourceType("awskinesis"), SourceLoader{})
+}
+
 // SourceLoader satisfies the connection SourceLoader interface
 type SourceLoader struct{}
 
 // Load will decode the provided JSON data into valid AWSKinesis format, or error out
 func (s SourceLoader) Load(data []byte) (connection.Source, error) {
 	var src AWSKinesis
-	err := json.Unmarshal(data, src)
+	err := json.Unmarshal(data, &src)
 	if err != nil {
 		return nil, fmt.Errorf("unable to load awskinesis source config: %s", err.Error())
 	}

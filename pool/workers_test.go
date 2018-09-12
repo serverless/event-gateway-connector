@@ -1,24 +1,16 @@
 package pool
 
 import (
+	"encoding/json"
+	"fmt"
 	"testing"
 	"time"
 
 	"github.com/serverless/event-gateway-connector/connection"
+	"github.com/serverless/event-gateway-connector/sources/awskinesis"
+	"github.com/serverless/event-gateway-connector/sources/kafka"
 	. "github.com/smartystreets/goconvey/convey"
 )
-
-type TestAWSKinesis struct {
-	StreamName         string `json:"streamName"`
-	Region             string `json:"region"`
-	AWSAccessKeyID     string `json:"awsAccessKeyId,omitempty"`
-	AWSSecretAccessKey string `json:"awsSecretAccessKey,omitempty"`
-	AWSSessionToken    string `json:"awsSessionToken,omitempty"`
-}
-
-func (a TestAWSKinesis) Call(payload []byte) ([]byte, error) {
-	return nil, nil
-}
 
 func TestInitialWorkerConnection(t *testing.T) {
 	conns := make(chan *connection.Connection, 100)
@@ -37,11 +29,11 @@ func TestInitialWorkerConnection(t *testing.T) {
 	Convey("test out sending a conn down the channel", t, func() {
 		So(func() { go StartWorkers(10, conns, done) }, ShouldNotPanic)
 		a := &connection.Connection{
-			Space:  "/test_one",
-			ID:     "test_one",
-			Target: "http://localhost:4001/",
-			Type:   "awskinesis",
-			Source: &TestAWSKinesis{
+			Space:      "/test_one",
+			ID:         "test_one",
+			Target:     "http://localhost:4001/",
+			SourceType: "awskinesis",
+			Source: &awskinesis.AWSKinesis{
 				StreamName:         "stream_one",
 				Region:             "us-east-1",
 				AWSAccessKeyID:     "key_one",
@@ -51,11 +43,11 @@ func TestInitialWorkerConnection(t *testing.T) {
 		}
 
 		b := &connection.Connection{
-			Space:  "/test_two",
-			ID:     "test_two",
-			Target: "http://localhost:4001/",
-			Type:   "awskinesis",
-			Source: &TestAWSKinesis{
+			Space:      "/test_two",
+			ID:         "test_two",
+			Target:     "http://localhost:4001/",
+			SourceType: "awskinesis",
+			Source: &awskinesis.AWSKinesis{
 				StreamName:         "stream_two",
 				Region:             "us-east-1",
 				AWSAccessKeyID:     "key_two",
@@ -75,4 +67,75 @@ func TestInitialWorkerConnection(t *testing.T) {
 		time.Sleep(1 * time.Second)
 	})
 
+}
+
+func TestMarshalJSON(t *testing.T) {
+	a := &connection.Connection{
+		Space:      "/test_one",
+		ID:         "test_one",
+		Target:     "http://localhost:4001/",
+		SourceType: "awskinesis",
+		Source: &awskinesis.AWSKinesis{
+			StreamName:         "stream_one",
+			Region:             "us-east-1",
+			AWSAccessKeyID:     "key_one",
+			AWSSecretAccessKey: "secret_key_one",
+			AWSSessionToken:    "session_token_one",
+		},
+	}
+
+	Convey("test marshalling a valid awskinesis source", t, func() {
+		data, err := json.Marshal(a)
+		So(data, ShouldNotBeNil)
+		So(err, ShouldBeNil)
+
+		fmt.Printf("DEBUG -- data is: %s\n", data)
+	})
+}
+
+func TestUnmarshalJSON(t *testing.T) {
+	a := &connection.Connection{
+		Space:      "/test_one",
+		ID:         "test_one",
+		Target:     "http://localhost:4001/",
+		SourceType: "awskinesis",
+		Source: &awskinesis.AWSKinesis{
+			StreamName:         "stream_one",
+			Region:             "us-east-1",
+			AWSAccessKeyID:     "key_one",
+			AWSSecretAccessKey: "secret_key_one",
+			AWSSessionToken:    "session_token_one",
+		},
+	}
+
+	b := &connection.Connection{
+		Space:      "/test_one",
+		ID:         "test_one",
+		Target:     "http://localhost:4001/",
+		SourceType: "awskinesis",
+		Source:     &kafka.Kafka{Topic: "funfunfun"},
+	}
+
+	Convey("test unmarshalling a valid awskinesis source", t, func() {
+		data, err := json.Marshal(a)
+		So(data, ShouldNotBeNil)
+		So(err, ShouldBeNil)
+
+		var src connection.Connection
+		err = json.Unmarshal(data, &src)
+
+		So(err, ShouldBeNil)
+	})
+
+	Convey("test unmarshalling invalid awskinesis source", t, func() {
+		data, err := json.Marshal(b)
+		So(data, ShouldNotBeNil)
+		So(err, ShouldBeNil)
+
+		var src connection.Connection
+		err = json.Unmarshal(data, &src)
+
+		So(err, ShouldNotBeNil)
+		fmt.Printf("DEBUG -- error is: %+v\n", err)
+	})
 }

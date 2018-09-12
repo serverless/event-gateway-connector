@@ -13,7 +13,7 @@ type Connection struct {
 	Space        string           `json:"space" validate:"required,min=3,space"`
 	ID           ID               `json:"connectionId" validate:"required,connectionid"`
 	Target       string           `json:"target"`
-	Type         SourceType       `json:"type"`
+	SourceType   SourceType       `json:"type"`
 	SourceConfig *json.RawMessage `json:"source"`
 	Source       Source           `json:"-" validate:"-"`
 }
@@ -27,16 +27,16 @@ func (c *Connection) UnmarshalJSON(data []byte) error {
 		return err
 	}
 
-	if rawConn.Type == "" {
+	if rawConn.SourceType == "" {
 		return fmt.Errorf("source type not set")
 	}
 
 	c.ID = rawConn.ID
 	c.Space = rawConn.Space
 	c.Target = rawConn.Target
-	c.Type = rawConn.Type
+	c.SourceType = rawConn.SourceType
 
-	if loader, ok := sources[rawConn.Type]; ok {
+	if loader, ok := sources[rawConn.SourceType]; ok {
 		src, err := loader.Load(*rawConn.SourceConfig)
 		if err != nil {
 			return err
@@ -46,7 +46,7 @@ func (c *Connection) UnmarshalJSON(data []byte) error {
 		return nil
 	}
 
-	return fmt.Errorf("unsupported source type: %s", rawConn.Type)
+	return fmt.Errorf("unsupported source type: %s", rawConn.SourceType)
 }
 
 // MarshalJSON ...
@@ -63,7 +63,7 @@ func (c *Connection) MarshalJSON() ([]byte, error) {
 		Space:        c.Space,
 		ID:           c.ID,
 		Target:       c.Target,
-		Type:         c.Type,
+		SourceType:   c.SourceType,
 		SourceConfig: &rawConfig,
 	}
 

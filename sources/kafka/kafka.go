@@ -7,3 +7,9 @@ type Kafka struct {
 	Partitions int      `json:"partitions"`
 	Brokers    []string `json:"hosts"`
 }
+
+// Call ...
+func (k Kafka) Call(payload []byte) ([]byte, error) {
+	// getrecord here
+	return nil, nil
+}
