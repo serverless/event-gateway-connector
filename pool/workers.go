@@ -1,11 +1,11 @@
 package pool
 
 import (
-	"time"
-
 	"github.com/serverless/event-gateway-connector/connection"
 	"go.uber.org/zap"
 )
+
+type workerMap map[int]*worker
 
 // worker is the internal representation of the worker process
 type worker struct {
@@ -24,7 +24,7 @@ func StartWorkers(numWorkers int, conns chan *connection.Connection, done <-chan
 	defer rawLogger.Sync()
 	log := rawLogger.Sugar()
 
-	m := make(map[int]*worker)
+	m := make(workerMap)
 
 	// fork off the goroutines, at this point each goroutine is unconfigured
 	for i := 0; i < numWorkers; i++ {
@@ -81,11 +81,21 @@ func (w *worker) run() {
 		select {
 		case <-w.done:
 			w.log.Debugf("trapped done signal for worker %d...", w.id)
+			// defer w.conn.Close()
 			return
-		case c := <-w.recv:
-			w.log.Infof("worker %d started job:  %s", w.id, c.ID)
-			time.Sleep(time.Second)
-			w.log.Infof("worker %d finished job: %s", w.id, c.ID)
+		case w.conn = <-w.recv:
+			w.log.Infof("worker %d started job:  %s", w.id, w.conn.ID)
+			if err := w.handleConnection(); err != nil {
+				w.log.Errorf("handle connection: %s", err.Error())
+			}
+			w.log.Infof("worker %d finished job: %s", w.id, w.conn.ID)
 		}
 	}
+}
+
+// handleConnection will actually spin up and handle the connection
+func (w *worker) handleConnection() error {
+	// perform the actual connection here
+
+	return nil
 }
