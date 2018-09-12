@@ -53,11 +53,11 @@ func StartWorkers(numWorkers int, conns chan *connection.Connection, done <-chan
 }
 
 func checkConnection(conn *connection.Connection) bool {
-	if conn.Type == "kafka" && conn.KafkaSource == nil {
+	if conn.EventType == "kafka" && conn.KafkaSource == nil {
 		return false
 	}
 
-	if conn.Type == "awskinesis" && conn.AWSKinesisSource == nil {
+	if conn.EventType == "awskinesis" && conn.AWSKinesisSource == nil {
 		return false
 	}
 

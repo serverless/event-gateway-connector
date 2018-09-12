@@ -8,7 +8,7 @@ type Connection struct {
 	Space            string            `json:"space"`
 	ID               ID                `json:"connectionId"`
 	Target           string            `json:"target"`
-	Type             string            `json:"type"`
+	EventType        string            `json:"eventType"`
 	AWSKinesisSource *AWSKinesisSource `json:"AWSKinesisSource,omitempty"`
 	KafkaSource      *KafkaSource      `json:"KafkaSource,omitempty"`
 }
