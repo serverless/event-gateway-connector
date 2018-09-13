@@ -44,6 +44,10 @@ func StartWorkers(numWorkers int, conns chan *connection.Connection, done <-chan
 	// simply dump the worker ID back on the channel
 	close := make(chan int)
 
+	// This stack is a helper to know which worker threads are still available to allocate.
+	//   Though this is moot in the initial kickoff of workers, this stack becomes helpful
+	//   if/when workers either die or are cancelled. Instead of combing the map to find
+	//   empty spaces, we can just pop a value off the top and use that
 	s := NewStack()
 
 	for a := 0; a < numWorkers; a++ {
