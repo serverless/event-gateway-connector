@@ -84,7 +84,7 @@ func StartWorkers(numWorkers int, conns chan *connection.Connection, done <-chan
 			delete(m, w.id)
 		case c := <-close:
 			// worker thread closed normally
-			log.Infof("closing worker %d", c)
+			log.Debugf("closing worker %d", c)
 			s.Push(c)
 			delete(m, c)
 		}
@@ -114,13 +114,13 @@ func (w *worker) run() {
 		case c := <-w.recv:
 			w.conn = c
 
-			w.log.Infof("worker %d started job:  %s", w.id, w.conn.ID)
+			w.log.Debugf("worker %d started job:  %s", w.id, w.conn.ID)
 			if err := w.handleConnection(); err != nil {
 				w.errors <- workerError{id: w.id, err: err}
 				return
 			}
 
-			w.log.Infof("worker %d finished job: %s", w.id, w.conn.ID)
+			w.log.Debugf("worker %d finished job: %s", w.id, w.conn.ID)
 			w.close <- w.id
 			return
 		}
@@ -131,7 +131,7 @@ func (w *worker) run() {
 func (w *worker) handleConnection() error {
 	// perform the actual connection here
 	for i := 0; i < 3; i++ {
-		w.log.Infof("would be handling the stuff here: %d, %+v", w.id, w.conn)
+		w.log.Debugf("would be handling the stuff here: %d, %+v", w.id, w.conn)
 		time.Sleep(3 * time.Second)
 	}
 
