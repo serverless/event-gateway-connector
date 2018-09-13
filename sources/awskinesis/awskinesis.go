@@ -67,8 +67,8 @@ func (a AWSKinesis) validate() error {
 	return validator.New().Struct(a)
 }
 
-// Call ...
-func (a AWSKinesis) Call(payload []byte) ([]byte, error) {
+// Fetch retrieves the next document from the awskinesis source
+func (a AWSKinesis) Fetch() ([]byte, error) {
 	// getrecord here
 	return nil, nil
 }

@@ -8,8 +8,8 @@ type Kafka struct {
 	Brokers    []string `json:"hosts"`
 }
 
-// Call ...
-func (k Kafka) Call(payload []byte) ([]byte, error) {
+// Fetch retrieves the next document from the kafka data source
+func (k Kafka) Fetch() ([]byte, error) {
 	// getrecord here
 	return nil, nil
 }

@@ -7,8 +7,6 @@ import (
 	"go.uber.org/zap"
 )
 
-type workerMap map[int]*worker
-
 // worker is the internal representation of the worker process
 type worker struct {
 	id     int
@@ -27,14 +25,9 @@ type workerError struct {
 }
 
 // StartWorkers receives the number of worker goroutines from the main process
-func StartWorkers(numWorkers int, conns chan *connection.Connection, done <-chan bool) error {
-	// initialize the logger for the pool
-	rawLogger, _ := zap.NewDevelopment()
-	defer rawLogger.Sync()
-	log := rawLogger.Sugar()
-
+func StartWorkers(log *zap.SugaredLogger, numWorkers int, conns <-chan *connection.Connection, done <-chan bool) error {
 	// define the map of workers to manage
-	m := make(workerMap)
+	workerMap := make(map[int]*worker)
 
 	// errors channel for workers to send back errors
 	// this will be used by the master to address any fails that come from a worker
@@ -45,9 +38,9 @@ func StartWorkers(numWorkers int, conns chan *connection.Connection, done <-chan
 	close := make(chan int)
 
 	// This stack is a helper to know which worker threads are still available to allocate.
-	//   Though this is moot in the initial kickoff of workers, this stack becomes helpful
-	//   if/when workers either die or are cancelled. Instead of combing the map to find
-	//   empty spaces, we can just pop a value off the top and use that
+	// Though this is moot in the initial kickoff of workers, this stack becomes helpful
+	// if/when workers either die or are cancelled. Instead of combing the map to find
+	// empty spaces, we can just pop a value off the top and use that
 	s := NewStack()
 
 	for a := 0; a < numWorkers; a++ {
@@ -56,7 +49,7 @@ func StartWorkers(numWorkers int, conns chan *connection.Connection, done <-chan
 
 	// fork off the goroutines, at this point each goroutine is unconfigured
 	for i := 0; i < numWorkers; i++ {
-		m[i] = newWorker(i, log, errors, close)
+		workerMap[i] = newWorker(i, log, errors, close)
 	}
 
 	for {
@@ -64,29 +57,29 @@ func StartWorkers(numWorkers int, conns chan *connection.Connection, done <-chan
 		case <-done:
 			// block & wait for the done signal
 			log.Debugf("received the done signal!")
-			for x := range m {
-				m[x].done <- true
+			for x := range workerMap {
+				workerMap[x].done <- true
 			}
 			return nil
 		case c := <-conns:
 			// receive a connection from the API
 			n, ok := s.Pop()
 			if !ok {
-				log.Errorf("too many worker threads already assigned (%d)", len(m))
+				log.Errorf("too many worker threads already assigned (%d of %d)", len(workerMap), numWorkers)
 				continue
 			}
-			m[n].recv <- c
+			workerMap[n].recv <- c
 		case w := <-errors:
 			// worker thread errored
 			// would need to figure out retry logic here
 			log.Warnf("received an error from worker %d, error: %s, total: %d", w.id, w.err.Error(), s.Length())
 			s.Push(w.id)
-			delete(m, w.id)
+			delete(workerMap, w.id)
 		case c := <-close:
 			// worker thread closed normally
 			log.Debugf("closing worker %d", c)
 			s.Push(c)
-			delete(m, c)
+			delete(workerMap, c)
 		}
 	}
 }
