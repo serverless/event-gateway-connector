@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/serverless/event-gateway-connector/connection"
+	"github.com/serverless/event-gateway-connector/utils"
 	"github.com/serverless/event-gateway-connector/watcher"
 	"go.uber.org/zap"
 )
@@ -27,12 +28,23 @@ type WorkerPool struct {
 	jobs       map[connection.ID]*job // map of job handlers assigned to each connection.ID
 	events     <-chan *watcher.Event
 	done       chan bool // signal channel to stop all worker processes
-	stack      *Stack
+	stack      *utils.Stack
 }
 
+// job is the interim struct to manage the specific worker for a give connectionID
 type job struct {
 	workers map[uint]*worker
 	conn    *connection.Connection
+}
+
+// define the map of workers to manage
+var workerMap = make(map[uint]*worker)
+
+// workerError for cases where the worker ends up failing for a specific reason
+type workerError struct {
+	id     uint
+	connID connection.ID
+	err    error
 }
 
 // NewPool will accept a few initializer variables in order to stand up the new worker
@@ -51,18 +63,13 @@ func NewPool(log *zap.SugaredLogger, maxWorkers uint, events <-chan *watcher.Eve
 	// Though this is moot in the initial kickoff of workers, this stack becomes helpful
 	// if/when workers either die or are cancelled. Instead of combing the map to find
 	// empty spaces, we can just pop a value off the top and use that
-	w.stack = NewStack()
+	w.stack = utils.NewStack()
 	return w, nil
 }
 
-// define the map of workers to manage
-var workerMap = make(map[uint]*worker)
-
-// workerError for cases where the worker ends up failing for a specific reason
-type workerError struct {
-	id     uint
-	connID connection.ID
-	err    error
+// NumWorkers returns the maximum number of workers eligible for configuration in the WorkerPool (set at initialization time)
+func (wp *WorkerPool) NumWorkers() uint {
+	return wp.numWorkers
 }
 
 // Close sends the done signal to the WorkerPool to clean up all Connections
@@ -189,9 +196,4 @@ func (w *worker) handleConnection(c *connection.Connection) error {
 	}
 
 	return nil
-}
-
-// NumWorkers returns the maximum number of workers eligible for configuration in the WorkerPool (set at initialization time)
-func (wp *WorkerPool) NumWorkers() uint {
-	return wp.numWorkers
 }

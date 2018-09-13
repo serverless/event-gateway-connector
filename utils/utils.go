@@ -1,4 +1,4 @@
-package workers
+package utils
 
 // Stack of values
 type Stack struct {
