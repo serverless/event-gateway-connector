@@ -69,6 +69,7 @@ func (w *Watcher) Watch() (<-chan *Event, error) {
 					conn := &connection.Connection{}
 					if err := json.Unmarshal(watchEvent.Kv.Value, conn); err != nil {
 						w.log.Errorf("unmarshaling payload failed: %s", err)
+						continue
 					}
 
 					event.Connection = conn
