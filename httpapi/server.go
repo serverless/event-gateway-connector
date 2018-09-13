@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/julienschmidt/httprouter"
@@ -9,14 +10,14 @@ import (
 )
 
 // ConfigAPI creates a new configuration API server.
-func ConfigAPI(store connection.Service) *http.Server {
+func ConfigAPI(store connection.Service, port int) *http.Server {
 	router := httprouter.New()
 
 	api := &HTTPAPI{Connections: store}
 	api.RegisterRoutes(router)
 
 	handler := &http.Server{
-		Addr:         ":4002",
+		Addr:         ":" + strconv.Itoa(port),
 		Handler:      router,
 		ReadTimeout:  3 * time.Second,
 		WriteTimeout: 3 * time.Second,

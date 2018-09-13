@@ -33,7 +33,7 @@ func (store Store) CreateConnection(conn *connection.Connection) (*connection.Co
 		return nil, err
 	}
 
-	_, err = store.Client.Put(context.TODO(), connectionKey{Space: conn.Space, ID: conn.ID}.String(), string(value))
+	_, err = store.Client.Put(context.TODO(), string(conn.ID), string(value))
 	if err != nil {
 		return nil, err
 	}
@@ -45,7 +45,7 @@ func (store Store) CreateConnection(conn *connection.Connection) (*connection.Co
 
 // DeleteConnection deletes connection from etcd.
 func (store Store) DeleteConnection(space string, id connection.ID) error {
-	resp, err := store.Client.Delete(context.TODO(), connectionKey{Space: space, ID: id}.String())
+	resp, err := store.Client.Delete(context.TODO(), string(id))
 	if resp.Deleted == 0 {
 		return ErrKeyNotFound
 	}
@@ -60,12 +60,3 @@ func (store Store) DeleteConnection(space string, id connection.ID) error {
 
 // ErrKeyNotFound is thrown when the key is not found in the store during a Get operation
 var ErrKeyNotFound = errors.New("Key not found in store")
-
-type connectionKey struct {
-	Space string
-	ID    connection.ID
-}
-
-func (ck connectionKey) String() string {
-	return "connections/" + string(ck.ID)
-}

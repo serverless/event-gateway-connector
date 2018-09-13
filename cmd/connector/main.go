@@ -4,9 +4,11 @@ import (
 	"context"
 	"os"
 	"os/signal"
+	"strconv"
 	"time"
 
 	etcd "github.com/coreos/etcd/clientv3"
+	"github.com/coreos/etcd/clientv3/concurrency"
 	"github.com/coreos/etcd/clientv3/namespace"
 	"github.com/serverless/event-gateway-connector/httpapi"
 	"github.com/serverless/event-gateway-connector/kv"
@@ -18,6 +20,8 @@ import (
 )
 
 const prefix = "serverless-event-gateway-connector/"
+const connectionsPrefix = prefix + "connections"
+const lockPrefix = prefix + "__locks"
 
 var maxWorkers = flag.UintP("workers", "w", 10, "maximum number of workers for the pool")
 
@@ -41,7 +45,7 @@ func main() {
 
 	// KV service
 	store := &kv.Store{
-		Client: namespace.NewKV(client, prefix),
+		Client: namespace.NewKV(client, connectionsPrefix),
 		Log:    logger,
 	}
 
@@ -58,6 +62,26 @@ func main() {
 			event := <-events
 			if event != nil {
 				logger.Debugw("Configuration change detected.", "ID", event.ID, "Connection", event.Connection, "type", event.Type)
+
+				if event.Type == watcher.Created {
+					mutex := concurrency.NewMutex(session, lockPrefix)
+
+					logger.Debugw("Locking...", "ID", event.ID)
+					ctx, cancel := context.WithTimeout(context.Background(), time.Second*2)
+					err := mutex.Lock(ctx)
+					if err != nil {
+						logger.Debugf("Unable to lock: %s", err)
+						continue
+					}
+					logger.Debugw("Locked.", "ID", event.ID)
+
+					logger.Debugw("Doing some work for 10 seconds...", "ID", event.ID)
+					time.Sleep(time.Second * 10)
+
+					cancel()
+					mutex.Unlock(context.TODO()) // TODO handler err
+					logger.Debugw("Unlocked.", "ID", event.ID)
+				}
 			}
 		}
 	}()
@@ -73,9 +97,9 @@ func main() {
 	defer wp.Stop()
 
 	// Server
-	srv := httpapi.ConfigAPI(store)
+	srv := httpapi.ConfigAPI(store, *port)
 	go func() {
-		logger.Debugf("Starting Config API on port: 4002")
+		logger.Debugf("Starting Config API on port: " + strconv.Itoa(*port))
 		logger.Fatal(srv.ListenAndServe())
 	}()
 	defer srv.Shutdown(context.TODO())
