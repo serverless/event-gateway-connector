@@ -18,7 +18,6 @@ type worker struct {
 	conn   *connection.Connection
 	log    *zap.SugaredLogger
 	done   chan bool
-	inUse  bool
 }
 
 // workerError for cases where the worker ends up failing for a specific reason
