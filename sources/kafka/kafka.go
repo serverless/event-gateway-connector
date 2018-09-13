@@ -4,7 +4,7 @@ package kafka
 // TODO: add tls config portion
 type Kafka struct {
 	Topic      string   `json:"topic"`
-	Partitions int      `json:"partitions"`
+	Partitions uint     `json:"partitions"`
 	Brokers    []string `json:"hosts"`
 }
 
@@ -12,4 +12,9 @@ type Kafka struct {
 func (k Kafka) Fetch() ([]byte, error) {
 	// getrecord here
 	return nil, nil
+}
+
+// NumWorkers returns the number of workers required for this connection
+func (k Kafka) NumWorkers() uint {
+	return k.Partitions
 }

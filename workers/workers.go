@@ -14,7 +14,6 @@ type worker struct {
 	recv   chan *connection.Connection
 	errors chan<- workerError
 	close  chan<- uint
-	conn   *connection.Connection
 	log    *zap.SugaredLogger
 	done   chan bool
 }
@@ -25,14 +24,15 @@ type WorkerPool struct {
 	maxWorkers uint
 	numWorkers uint
 	log        *zap.SugaredLogger
-	jobs       map[string]job // map of job handlers assigned to each connection.ID
+	jobs       map[connection.ID]*job // map of job handlers assigned to each connection.ID
 	events     <-chan *watcher.Event
+	done       chan bool // signal channel to stop all worker processes
+	stack      *Stack
 }
 
 type job struct {
-	workers []worker
+	workers map[uint]*worker
 	conn    *connection.Connection
-	done    <-chan bool
 }
 
 // NewPool will accept a few initializer variables in order to stand up the new worker
@@ -42,22 +42,40 @@ func NewPool(log *zap.SugaredLogger, maxWorkers uint, events <-chan *watcher.Eve
 	w := &WorkerPool{
 		maxWorkers: maxWorkers,
 		log:        log,
-		jobs:       make(map[string]job),
+		jobs:       make(map[connection.ID]*job),
 		events:     events,
+		done:       make(chan bool),
 	}
+
+	// This stack is a helper to know which worker threads are still available to allocate.
+	// Though this is moot in the initial kickoff of workers, this stack becomes helpful
+	// if/when workers either die or are cancelled. Instead of combing the map to find
+	// empty spaces, we can just pop a value off the top and use that
+	w.stack = NewStack()
 	return w, nil
 }
 
+// define the map of workers to manage
+var workerMap = make(map[uint]*worker)
+
 // workerError for cases where the worker ends up failing for a specific reason
 type workerError struct {
-	id  uint
-	err error
+	id     uint
+	connID connection.ID
+	err    error
+}
+
+// Close sends the done signal to the WorkerPool to clean up all Connections
+func (wp *WorkerPool) Close() {
+	wp.close()
+}
+
+func (wp *WorkerPool) close() {
+	wp.done <- true
 }
 
 // StartWorkers receives the number of worker goroutines from the main process
-func (wp *WorkerPool) StartWorkers(conns <-chan *connection.Connection, done <-chan bool) error {
-	// define the map of workers to manage
-	workerMap := make(map[uint]*worker)
+func (wp *WorkerPool) StartWorkers() error {
 
 	// errors channel for workers to send back errors
 	// this will be used by the master to address any fails that come from a worker
@@ -67,51 +85,65 @@ func (wp *WorkerPool) StartWorkers(conns <-chan *connection.Connection, done <-c
 	// simply dump the worker ID back on the channel
 	close := make(chan uint)
 
-	// This stack is a helper to know which worker threads are still available to allocate.
-	// Though this is moot in the initial kickoff of workers, this stack becomes helpful
-	// if/when workers either die or are cancelled. Instead of combing the map to find
-	// empty spaces, we can just pop a value off the top and use that
-	s := NewStack()
-
-	for a := uint(0); a < wp.maxWorkers; a++ {
-		s.Push(a)
-	}
-
 	// fork off the goroutines, at this point each goroutine is unconfigured
 	for i := uint(0); i < wp.maxWorkers; i++ {
 		workerMap[i] = newWorker(i, wp.log, errors, close)
+		wp.stack.Push(i)
 	}
 
 	for {
 		select {
-		case <-done:
+		case <-wp.done:
 			// block & wait for the done signal
 			wp.log.Debugf("received the done signal!")
 			for x := range workerMap {
 				workerMap[x].done <- true
 			}
 			return nil
-		case c := <-conns:
-			// receive a connection from the API
-			n, ok := s.Pop()
-			if !ok {
-				wp.log.Errorf("too many worker threads already assigned (%d of %d)", len(workerMap), wp.numWorkers)
-				continue
+		case e := <-wp.events:
+			count := e.Connection.Source.NumWorkers()
+			if _, ok := wp.jobs[e.Connection.ID]; !ok {
+				wp.jobs[e.Connection.ID] = &job{
+					conn:    e.Connection,
+					workers: make(map[uint]*worker),
+				}
 			}
-			workerMap[n].recv <- c
+
+			for a := uint(0); a < count; a++ {
+				wp.assignWorker(e.Connection)
+			}
 		case w := <-errors:
 			// worker thread errored
 			// would need to figure out retry logic here
-			wp.log.Warnf("received an error from worker %d, error: %s, total: %d", w.id, w.err.Error(), s.Length())
-			s.Push(w.id)
-			delete(workerMap, w.id)
+			wp.log.Warnf("received an error from worker %d, error: %s, total: %d", w.id, w.err.Error(), wp.stack.Length())
+			wp.removeWorker(w)
+			wp.assignWorker(wp.jobs[w.connID].conn)
 		case c := <-close:
 			// worker thread closed normally
 			wp.log.Debugf("closing worker %d", c)
-			s.Push(c)
+			wp.stack.Push(c)
 			delete(workerMap, c)
 		}
 	}
+}
+
+// removeWorker deducts the specified worker from both the job and workerMap, allowing it to be reassigned
+func (wp *WorkerPool) removeWorker(w workerError) {
+	wp.stack.Push(w.id)
+	delete(workerMap, w.id)
+	delete(wp.jobs[w.connID].workers, w.id)
+}
+
+// handleEvent processes the new event and signals the requisite worker goroutines
+func (wp *WorkerPool) assignWorker(c *connection.Connection) {
+	// receive a connection from the API
+	n, ok := wp.stack.Pop()
+	if !ok {
+		wp.log.Errorf("too many worker threads already assigned (%d of %d)", len(workerMap), wp.numWorkers)
+	}
+
+	workerMap[n].recv <- c
+	wp.jobs[c.ID].workers[n] = workerMap[n]
 }
 
 func newWorker(id uint, log *zap.SugaredLogger, errors chan<- workerError, close chan<- uint) *worker {
@@ -135,15 +167,13 @@ func (w *worker) run() {
 			w.log.Debugf("trapped done signal for worker %d...", w.id)
 			return
 		case c := <-w.recv:
-			w.conn = c
-
-			w.log.Debugf("worker %d started job:  %s", w.id, w.conn.ID)
-			if err := w.handleConnection(); err != nil {
-				w.errors <- workerError{id: w.id, err: err}
+			w.log.Debugf("worker %d started job:  %s", w.id, c.ID)
+			if err := w.handleConnection(c); err != nil {
+				w.errors <- workerError{id: w.id, connID: c.ID, err: err}
 				return
 			}
 
-			w.log.Debugf("worker %d finished job: %s", w.id, w.conn.ID)
+			w.log.Debugf("worker %d finished job: %s", w.id, c.ID)
 			w.close <- w.id
 			return
 		}
@@ -151,12 +181,17 @@ func (w *worker) run() {
 }
 
 // handleConnection will actually spin up and handle the connection
-func (w *worker) handleConnection() error {
+func (w *worker) handleConnection(c *connection.Connection) error {
 	// perform the actual connection here
 	for i := 0; i < 3; i++ {
-		w.log.Debugf("would be handling the stuff here: %d, %+v", w.id, w.conn)
+		w.log.Debugf("would be handling the stuff here: %d, %+v", w.id, c)
 		time.Sleep(3 * time.Second)
 	}
 
 	return nil
+}
+
+// NumWorkers returns the maximum number of workers eligible for configuration in the WorkerPool (set at initialization time)
+func (wp *WorkerPool) NumWorkers() uint {
+	return wp.numWorkers
 }

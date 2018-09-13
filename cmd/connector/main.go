@@ -48,6 +48,7 @@ func main() {
 	// Watcher
 	watcher := watcher.New(client, prefix, logger)
 	defer watcher.Stop()
+
 	events, err := watcher.Watch()
 	if err != nil {
 		logger.Fatalf("Unable to watch changes in etcd. Error: %s", err)
@@ -61,10 +62,16 @@ func main() {
 		}
 	}()
 
+	// Initalize the WorkerPool
 	wp, err := workers.NewPool(logger, *maxWorkers, events)
 	if err != nil {
 		logger.Fatal(err)
 	}
+	go func() {
+		logger.Debugf("kicking off the workerpool with %d workers", wp.NumWorkers())
+		logger.Fatal(wp.StartWorkers())
+	}()
+	defer wp.Close()
 
 	// Server
 	srv := httpapi.ConfigAPI(store)
