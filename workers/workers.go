@@ -1,33 +1,63 @@
-package pool
+package workers
 
 import (
 	"time"
 
 	"github.com/serverless/event-gateway-connector/connection"
+	"github.com/serverless/event-gateway-connector/watcher"
 	"go.uber.org/zap"
 )
 
 // worker is the internal representation of the worker process
 type worker struct {
-	id     int
+	id     uint
 	recv   chan *connection.Connection
 	errors chan<- workerError
-	close  chan<- int
+	close  chan<- uint
 	conn   *connection.Connection
 	log    *zap.SugaredLogger
 	done   chan bool
 }
 
+// WorkerPool is the default struct for our worker pool, containing mostly private values
+// including the maximum workers eligible, current count of workers, etc.
+type WorkerPool struct {
+	maxWorkers uint
+	numWorkers uint
+	log        *zap.SugaredLogger
+	jobs       map[string]job // map of job handlers assigned to each connection.ID
+	events     <-chan *watcher.Event
+}
+
+type job struct {
+	workers []worker
+	conn    *connection.Connection
+	done    <-chan bool
+}
+
+// NewPool will accept a few initializer variables in order to stand up the new worker
+// pool of goroutines. These workers will listen for *watcher.Events and handle the
+// internal *Connection to manage data.
+func NewPool(log *zap.SugaredLogger, maxWorkers uint, events <-chan *watcher.Event) (*WorkerPool, error) {
+	w := &WorkerPool{
+		maxWorkers: maxWorkers,
+		log:        log,
+		jobs:       make(map[string]job),
+		events:     events,
+	}
+	return w, nil
+}
+
 // workerError for cases where the worker ends up failing for a specific reason
 type workerError struct {
-	id  int
+	id  uint
 	err error
 }
 
 // StartWorkers receives the number of worker goroutines from the main process
-func StartWorkers(log *zap.SugaredLogger, numWorkers int, conns <-chan *connection.Connection, done <-chan bool) error {
+func (wp *WorkerPool) StartWorkers(conns <-chan *connection.Connection, done <-chan bool) error {
 	// define the map of workers to manage
-	workerMap := make(map[int]*worker)
+	workerMap := make(map[uint]*worker)
 
 	// errors channel for workers to send back errors
 	// this will be used by the master to address any fails that come from a worker
@@ -35,7 +65,7 @@ func StartWorkers(log *zap.SugaredLogger, numWorkers int, conns <-chan *connecti
 
 	// close channel for workers to send back normal exit
 	// simply dump the worker ID back on the channel
-	close := make(chan int)
+	close := make(chan uint)
 
 	// This stack is a helper to know which worker threads are still available to allocate.
 	// Though this is moot in the initial kickoff of workers, this stack becomes helpful
@@ -43,20 +73,20 @@ func StartWorkers(log *zap.SugaredLogger, numWorkers int, conns <-chan *connecti
 	// empty spaces, we can just pop a value off the top and use that
 	s := NewStack()
 
-	for a := 0; a < numWorkers; a++ {
+	for a := uint(0); a < wp.maxWorkers; a++ {
 		s.Push(a)
 	}
 
 	// fork off the goroutines, at this point each goroutine is unconfigured
-	for i := 0; i < numWorkers; i++ {
-		workerMap[i] = newWorker(i, log, errors, close)
+	for i := uint(0); i < wp.maxWorkers; i++ {
+		workerMap[i] = newWorker(i, wp.log, errors, close)
 	}
 
 	for {
 		select {
 		case <-done:
 			// block & wait for the done signal
-			log.Debugf("received the done signal!")
+			wp.log.Debugf("received the done signal!")
 			for x := range workerMap {
 				workerMap[x].done <- true
 			}
@@ -65,26 +95,26 @@ func StartWorkers(log *zap.SugaredLogger, numWorkers int, conns <-chan *connecti
 			// receive a connection from the API
 			n, ok := s.Pop()
 			if !ok {
-				log.Errorf("too many worker threads already assigned (%d of %d)", len(workerMap), numWorkers)
+				wp.log.Errorf("too many worker threads already assigned (%d of %d)", len(workerMap), wp.numWorkers)
 				continue
 			}
 			workerMap[n].recv <- c
 		case w := <-errors:
 			// worker thread errored
 			// would need to figure out retry logic here
-			log.Warnf("received an error from worker %d, error: %s, total: %d", w.id, w.err.Error(), s.Length())
+			wp.log.Warnf("received an error from worker %d, error: %s, total: %d", w.id, w.err.Error(), s.Length())
 			s.Push(w.id)
 			delete(workerMap, w.id)
 		case c := <-close:
 			// worker thread closed normally
-			log.Debugf("closing worker %d", c)
+			wp.log.Debugf("closing worker %d", c)
 			s.Push(c)
 			delete(workerMap, c)
 		}
 	}
 }
 
-func newWorker(id int, log *zap.SugaredLogger, errors chan<- workerError, close chan<- int) *worker {
+func newWorker(id uint, log *zap.SugaredLogger, errors chan<- workerError, close chan<- uint) *worker {
 	w := &worker{
 		id:     id,
 		done:   make(chan bool),

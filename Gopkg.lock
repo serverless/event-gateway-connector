@@ -134,6 +134,14 @@
   version = "v1.1"
 
 [[projects]]
+  digest = "1:8fd3a15613c7e70cceff3aa03dd57560dba87c4868864e397d5eb2f14addd3f5"
+  name = "github.com/ogier/pflag"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "32a05c62658bd1d7c7e75cbc8195de5d585fde0f"
+  version = "v0.0.1"
+
+[[projects]]
   digest = "1:0028cb19b2e4c3112225cd871870f2d9cf49b9b4276531f03438a88e94be86fe"
   name = "github.com/pmezard/go-difflib"
   packages = ["difflib"]
@@ -281,6 +289,7 @@
     "github.com/coreos/etcd/clientv3",
     "github.com/coreos/etcd/clientv3/namespace",
     "github.com/julienschmidt/httprouter",
+    "github.com/ogier/pflag",
     "github.com/segmentio/ksuid",
     "github.com/stretchr/testify/assert",
     "go.uber.org/zap",

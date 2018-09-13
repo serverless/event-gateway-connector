@@ -11,12 +11,19 @@ import (
 	"github.com/serverless/event-gateway-connector/httpapi"
 	"github.com/serverless/event-gateway-connector/kv"
 	"github.com/serverless/event-gateway-connector/watcher"
+	"github.com/serverless/event-gateway-connector/workers"
 	"go.uber.org/zap"
+
+	flag "github.com/ogier/pflag"
 )
 
 const prefix = "serverless-event-gateway-connector/"
 
+var maxWorkers = flag.UintP("workers", "w", 10, "maximum number of workers for the pool")
+
 func main() {
+	flag.Parse()
+
 	// logger
 	rawLogger, _ := zap.NewDevelopment()
 	defer rawLogger.Sync()
@@ -54,6 +61,11 @@ func main() {
 		}
 	}()
 
+	wp, err := workers.NewPool(logger, *maxWorkers, events)
+	if err != nil {
+		logger.Fatal(err)
+	}
+
 	// Server
 	srv := httpapi.ConfigAPI(store)
 	go func() {
@@ -61,6 +73,8 @@ func main() {
 		logger.Fatal(srv.ListenAndServe())
 	}()
 	defer srv.Shutdown(context.TODO())
+
+	logger.Debugf("worker pool is: %+v", wp)
 
 	// Setup signal capturing
 	stop := make(chan os.Signal, 1)

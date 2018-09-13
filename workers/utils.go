@@ -1,13 +1,13 @@
-package pool
+package workers
 
 // Stack of values
 type Stack struct {
 	root   *node
-	length int
+	length uint
 }
 
 type node struct {
-	value int
+	value uint
 	next  *node
 }
 
@@ -17,19 +17,19 @@ func NewStack() *Stack {
 }
 
 // Length returns the number of elements currently on our stack
-func (s *Stack) Length() int {
+func (s *Stack) Length() uint {
 	return s.length
 }
 
 // Push adds a new int value to the stack
-func (s *Stack) Push(val int) {
+func (s *Stack) Push(val uint) {
 	n := &node{value: val, next: s.root}
 	s.root = n
 	s.length++
 }
 
 // Pop removes the top of the stack and returns the value
-func (s *Stack) Pop() (int, bool) {
+func (s *Stack) Pop() (uint, bool) {
 	if s.length == 0 {
 		return 0, false
 	}
