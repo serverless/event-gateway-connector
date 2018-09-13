@@ -46,12 +46,19 @@ func StartWorkers(numWorkers int, conns chan *connection.Connection, done <-chan
 	// simply dump the worker ID back on the channel
 	close := make(chan int)
 
+	s := NewStack()
+
+	for a := 0; a < numWorkers; a++ {
+		s.Push(a)
+	}
+
+	fmt.Printf("DEBUGGER -- length is: %d\n", s.Length())
+
 	// fork off the goroutines, at this point each goroutine is unconfigured
 	for i := 0; i < numWorkers; i++ {
 		m[i] = newWorker(i, log, errors, close)
 	}
 
-	var tasks int
 	for {
 		select {
 		case <-done:
@@ -62,16 +69,24 @@ func StartWorkers(numWorkers int, conns chan *connection.Connection, done <-chan
 			}
 			return nil
 		case c := <-conns:
-			m[tasks%numWorkers].recv <- c
-			tasks++
+			// receive a connection from the API
+			n, ok := s.Pop()
+			if !ok {
+				log.Errorf("too many worker threads already assigned (%d)", len(m))
+				continue
+			}
+			m[n].recv <- c
 		case w := <-errors:
+			// worker thread errored
 			// would need to figure out retry logic here
-			tasks--
-			log.Warnf("received an error from worker %d, error: %s, total: %d", w.id, w.err.Error(), tasks)
+			log.Warnf("received an error from worker %d, error: %s, total: %d", w.id, w.err.Error(), s.Length())
+			s.Push(w.id)
 			delete(m, w.id)
 		case c := <-close:
+			// worker thread closed normally
 			log.Infof("closing worker %d", c)
-			tasks--
+			s.Push(c)
+			delete(m, c)
 		}
 	}
 }
@@ -95,7 +110,6 @@ func (w *worker) run() {
 		select {
 		case <-w.done:
 			w.log.Debugf("trapped done signal for worker %d...", w.id)
-			// defer w.conn.Close()
 			return
 		case c := <-w.recv:
 			w.conn = c
@@ -115,10 +129,6 @@ func (w *worker) run() {
 
 // handleConnection will actually spin up and handle the connection
 func (w *worker) handleConnection() error {
-	if w.id == 1 {
-		return fmt.Errorf("testing an error failure in worker 1")
-	}
-
 	// perform the actual connection here
 	for i := 0; i < 3; i++ {
 		w.log.Infof("would be handling the stuff here: %d, %+v", w.id, w.conn)
