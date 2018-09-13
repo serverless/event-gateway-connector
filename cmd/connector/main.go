@@ -3,10 +3,11 @@ package main
 import (
 	"time"
 
-	"github.com/coreos/etcd/clientv3"
+	etcd "github.com/coreos/etcd/clientv3"
 	"github.com/coreos/etcd/clientv3/namespace"
 	"github.com/serverless/event-gateway-connector/httpapi"
 	"github.com/serverless/event-gateway-connector/kv"
+	"github.com/serverless/event-gateway-connector/watcher"
 	"go.uber.org/zap"
 )
 
@@ -19,7 +20,7 @@ func main() {
 	logger := rawLogger.Sugar()
 
 	// etcd client
-	client, err := clientv3.New(clientv3.Config{
+	client, err := etcd.New(etcd.Config{
 		Endpoints:   []string{"localhost:2379"},
 		DialTimeout: 2 * time.Second,
 	})
@@ -34,7 +35,19 @@ func main() {
 		Log:    logger,
 	}
 
-	// server
+	// Watcher
+	events, err := watcher.Watch(client, prefix, nil)
+	if err != nil {
+		logger.Fatalf("Unable to watch changes in etcd. Error: %s", err)
+	}
+	go func() {
+		for {
+			event := <-events
+			logger.Debugw("Change detected.", "key", event.Key, "value", string(event.Value), "type", event.Type)
+		}
+	}()
+
+	// Server
 	logger.Debugf("Starting Config API on port: 4002")
 	logger.Fatal(httpapi.StartConfigAPI(store))
 }
