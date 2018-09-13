@@ -2,28 +2,49 @@ package watcher
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"strings"
+
+	"github.com/coreos/etcd/mvcc/mvccpb"
+
+	"github.com/serverless/event-gateway-connector/connection"
+	"go.uber.org/zap"
 
 	"github.com/coreos/etcd/clientv3/namespace"
 
 	etcd "github.com/coreos/etcd/clientv3"
 )
 
-// Watch watches etcd directory and emits events when key/value pair was added, deleted or changed.
-// Watch function also emits events for pre-existing key/value pairs.
-func Watch(client *etcd.Client, prefix string, stopCh <-chan struct{}) (<-chan *Event, error) {
-	watcherClient := namespace.NewWatcher(client.Watcher, prefix)
-	kvClient := namespace.NewKV(client.KV, prefix)
+// Watcher watches etcd directory and emits events when Connection configuration was added or deleted.
+type Watcher struct {
+	kvClient    etcd.KV
+	watchClient etcd.Watcher
+	stopCh      chan struct{}
+	log         *zap.SugaredLogger
+}
 
+// New creates new Watcher instance
+func New(client *etcd.Client, prefix string, log *zap.SugaredLogger) *Watcher {
+	return &Watcher{
+		kvClient:    namespace.NewKV(client.KV, prefix),
+		watchClient: namespace.NewWatcher(client.Watcher, prefix),
+		stopCh:      make(chan struct{}),
+		log:         log,
+	}
+}
+
+// Watch function also emits events for pre-existing key/value pairs.
+func (w *Watcher) Watch() (<-chan *Event, error) {
 	eventsCh := make(chan *Event)
 
-	existingValues, err := list(kvClient)
+	existingValues, err := w.list()
 	if err != nil {
 		return nil, fmt.Errorf("listing existing values faield: %s", err)
 	}
 
 	go func() {
-		defer watcherClient.Close()
+		defer w.watchClient.Close()
 		defer close(eventsCh)
 
 		// populate channel with events about existing values
@@ -31,22 +52,29 @@ func Watch(client *etcd.Client, prefix string, stopCh <-chan struct{}) (<-chan *
 			eventsCh <- existingValue
 		}
 
-		watchCh := watcherClient.Watch(context.TODO(), "", etcd.WithPrefix())
+		watchCh := w.watchClient.Watch(context.TODO(), "", etcd.WithPrefix())
 		for resp := range watchCh {
 			select {
-			case <-stopCh:
+			case <-w.stopCh:
 				return
 			default:
 			}
 
 			for _, watchEvent := range resp.Events {
-				event := &Event{
-					Type:  EventCreatedOrChanged,
-					Key:   string(watchEvent.Kv.Key),
-					Value: []byte(watchEvent.Kv.Value),
-				}
-				if watchEvent.Kv.Value == nil {
-					event.Type = EventDeleted
+				event := &Event{ID: extractIDFromKey(watchEvent.Kv.Key)}
+
+				if watchEvent.Type == mvccpb.PUT {
+					event.Type = Created
+
+					conn := &connection.Connection{}
+					if err := json.Unmarshal(watchEvent.Kv.Value, conn); err != nil {
+						w.log.Errorf("unmarshaling payload failed: %s", err)
+						continue
+					}
+
+					event.Connection = conn
+				} else {
+					event.Type = Deleted
 				}
 
 				eventsCh <- event
@@ -57,35 +85,49 @@ func Watch(client *etcd.Client, prefix string, stopCh <-chan struct{}) (<-chan *
 	return eventsCh, nil
 }
 
+// Stop watching changes in etcd.
+func (w *Watcher) Stop() {
+	close(w.stopCh)
+}
+
+const (
+	// Created happens when Conneciton was added to configuration.
+	Created int = iota
+	// Deleted happens when Connection was deleted.
+	Deleted
+)
+
+// Event represents event happened in Connections configuration
+type Event struct {
+	Type       int
+	ID         connection.ID
+	Connection *connection.Connection
+}
+
 // list retruns existing key/value pairs as events.
-func list(client etcd.KV) ([]*Event, error) {
-	resp, err := client.Get(context.TODO(), "\x00", etcd.WithFromKey())
+func (w *Watcher) list() ([]*Event, error) {
+	resp, err := w.kvClient.Get(context.TODO(), "\x00", etcd.WithFromKey())
 	if err != nil {
 		return nil, err
 	}
 
 	list := []*Event{}
 	for _, kv := range resp.Kvs {
+		conn := &connection.Connection{}
+		if err := json.Unmarshal(kv.Value, conn); err != nil {
+			return nil, err
+		}
+
 		list = append(list, &Event{
-			Type:  EventCreatedOrChanged,
-			Key:   string(kv.Key),
-			Value: kv.Value,
+			Type:       Created,
+			ID:         conn.ID,
+			Connection: conn,
 		})
 	}
 
 	return list, nil
 }
 
-const (
-	// EventCreatedOrChanged happens when key/value pair was added or changed.
-	EventCreatedOrChanged int = iota
-	// EventDeleted happens when key/value pair was deleted.
-	EventDeleted
-)
-
-// Event represents event happened in etcd KV store
-type Event struct {
-	Type  int
-	Key   string
-	Value []byte
+func extractIDFromKey(key []byte) connection.ID {
+	return connection.ID(strings.Split(string(key), "/")[1])
 }

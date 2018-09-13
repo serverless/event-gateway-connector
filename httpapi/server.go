@@ -8,8 +8,8 @@ import (
 	"github.com/serverless/event-gateway-connector/connection"
 )
 
-// StartConfigAPI creates a new configuration API server and listens for requests.
-func StartConfigAPI(store connection.Service) error {
+// ConfigAPI creates a new configuration API server.
+func ConfigAPI(store connection.Service) *http.Server {
 	router := httprouter.New()
 
 	api := &HTTPAPI{Connections: store}
@@ -22,5 +22,5 @@ func StartConfigAPI(store connection.Service) error {
 		WriteTimeout: 3 * time.Second,
 	}
 
-	return handler.ListenAndServe()
+	return handler
 }

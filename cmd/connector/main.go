@@ -1,6 +1,9 @@
 package main
 
 import (
+	"context"
+	"os"
+	"os/signal"
 	"time"
 
 	etcd "github.com/coreos/etcd/clientv3"
@@ -36,18 +39,33 @@ func main() {
 	}
 
 	// Watcher
-	events, err := watcher.Watch(client, prefix, nil)
+	watcher := watcher.New(client, prefix, logger)
+	defer watcher.Stop()
+	events, err := watcher.Watch()
 	if err != nil {
 		logger.Fatalf("Unable to watch changes in etcd. Error: %s", err)
 	}
 	go func() {
 		for {
 			event := <-events
-			logger.Debugw("Change detected.", "key", event.Key, "value", string(event.Value), "type", event.Type)
+			if event != nil {
+				logger.Debugw("Configuration change detected.", "ID", event.ID, "Connection", event.Connection, "type", event.Type)
+			}
 		}
 	}()
 
 	// Server
-	logger.Debugf("Starting Config API on port: 4002")
-	logger.Fatal(httpapi.StartConfigAPI(store))
+	srv := httpapi.ConfigAPI(store)
+	go func() {
+		logger.Debugf("Starting Config API on port: 4002")
+		logger.Fatal(srv.ListenAndServe())
+	}()
+	defer srv.Shutdown(context.TODO())
+
+	// Setup signal capturing
+	stop := make(chan os.Signal, 1)
+	signal.Notify(stop, os.Interrupt)
+	<-stop
+
+	logger.Debugf("Cleaning up resources...")
 }
