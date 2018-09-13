@@ -2,7 +2,6 @@ package pool
 
 import (
 	"encoding/json"
-	"fmt"
 	"testing"
 	"time"
 
@@ -31,8 +30,6 @@ func TestMarshalJSON(t *testing.T) {
 		data, err := json.Marshal(a)
 		So(data, ShouldNotBeNil)
 		So(err, ShouldBeNil)
-
-		fmt.Printf("DEBUG -- data is: %s\n", data)
 	})
 }
 
@@ -79,7 +76,6 @@ func TestUnmarshalJSON(t *testing.T) {
 		err = json.Unmarshal(data, &src)
 
 		So(err, ShouldNotBeNil)
-		fmt.Printf("DEBUG -- error is: %+v\n", err)
 	})
 }
 

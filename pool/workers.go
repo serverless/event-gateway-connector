@@ -1,7 +1,6 @@
 package pool
 
 import (
-	"fmt"
 	"time"
 
 	"github.com/serverless/event-gateway-connector/connection"
@@ -51,8 +50,6 @@ func StartWorkers(numWorkers int, conns chan *connection.Connection, done <-chan
 	for a := 0; a < numWorkers; a++ {
 		s.Push(a)
 	}
-
-	fmt.Printf("DEBUGGER -- length is: %d\n", s.Length())
 
 	// fork off the goroutines, at this point each goroutine is unconfigured
 	for i := 0; i < numWorkers; i++ {
