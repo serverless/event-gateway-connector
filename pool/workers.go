@@ -11,8 +11,8 @@ import (
 type worker struct {
 	id     int
 	recv   chan *connection.Connection
-	errors chan workerError
-	close  chan int
+	errors chan<- workerError
+	close  chan<- int
 	conn   *connection.Connection
 	log    *zap.SugaredLogger
 	done   chan bool
@@ -84,7 +84,7 @@ func StartWorkers(log *zap.SugaredLogger, numWorkers int, conns <-chan *connecti
 	}
 }
 
-func newWorker(id int, log *zap.SugaredLogger, errors chan workerError, close chan int) *worker {
+func newWorker(id int, log *zap.SugaredLogger, errors chan<- workerError, close chan<- int) *worker {
 	w := &worker{
 		id:     id,
 		done:   make(chan bool),
