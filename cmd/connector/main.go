@@ -53,11 +53,11 @@ func main() {
 	// Watcher
 
 	watch := watcher.New(client, connectionsPrefix, logger.Named("Watcher"))
-	defer watch.Stop()
 	events, err := watch.Watch()
 	if err != nil {
 		logger.Fatalf("Unable to watch changes in etcd. Error: %s", err)
 	}
+	defer watch.Stop()
 
 	// Initalize the WorkerPool
 	session, err := concurrency.NewSession(client)
