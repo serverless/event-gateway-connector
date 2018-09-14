@@ -24,7 +24,7 @@ const connectionsPrefix = prefix + "connections"
 const lockPrefix = prefix + "__locks"
 
 var maxWorkers = flag.UintP("workers", "w", 10, "Maximum number of workers for the pool.")
-var port := flag.IntP("port", "p", 4002, "Port to serve configuration API on")
+var port = flag.IntP("port", "p", 4002, "Port to serve configuration API on")
 
 func main() {
 	flag.Parse()
