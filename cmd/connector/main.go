@@ -46,7 +46,7 @@ func main() {
 	}
 
 	// Watcher
-	watcher := watcher.New(client, prefix, logger)
+	watcher := watcher.New(client, prefix, logger.Named("Watcher"))
 	defer watcher.Stop()
 
 	events, err := watcher.Watch()
@@ -63,15 +63,14 @@ func main() {
 	}()
 
 	// Initalize the WorkerPool
-	wp, err := workerpool.New(*maxWorkers, events, logger)
+	wp, err := workerpool.New(*maxWorkers, events, logger.Named("WorkerPool"))
 	if err != nil {
 		logger.Fatal(err)
 	}
 	go func() {
-		logger.Debugf("kicking off the workerpool with %d workers", wp.NumWorkers())
-		logger.Fatal(wp.StartWorkers())
+		logger.Fatal(wp.Start())
 	}()
-	defer wp.Close()
+	defer wp.Stop()
 
 	// Server
 	srv := httpapi.ConfigAPI(store)
@@ -80,8 +79,6 @@ func main() {
 		logger.Fatal(srv.ListenAndServe())
 	}()
 	defer srv.Shutdown(context.TODO())
-
-	logger.Debugf("worker pool is: %+v", wp)
 
 	// Setup signal capturing
 	stop := make(chan os.Signal, 1)
