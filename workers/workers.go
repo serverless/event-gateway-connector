@@ -163,7 +163,6 @@ type worker struct {
 type job struct {
 	workers map[uint]*worker
 	conn    *connection.Connection
-	done    chan bool
 }
 
 // workerError for cases where the worker ends up failing for a specific reason
