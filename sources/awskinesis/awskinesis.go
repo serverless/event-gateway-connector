@@ -19,7 +19,7 @@ type AWSKinesis struct {
 	Service            kinesisiface.KinesisAPI `json:"-" validate:"-"`
 	StreamName         string                  `json:"streamName" validate:"required"`
 	Region             string                  `json:"region" validate:"required"`
-	NumShards          uint                    `json:"numShards"`
+	NumberOfShards     uint                    `json:"numberOfShards" validate:"min=1"`
 	AWSAccessKeyID     string                  `json:"awsAccessKeyId,omitempty"`
 	AWSSecretAccessKey string                  `json:"awsSecretAccessKey,omitempty"`
 	AWSSessionToken    string                  `json:"awsSessionToken,omitempty"`
@@ -55,11 +55,6 @@ func (s SourceLoader) Load(data []byte) (connection.Source, error) {
 		)
 	}
 
-	// set the default value of shards in case this is not provided
-	if src.NumShards == 0 {
-		src.NumShards = 1
-	}
-
 	awsSession, err := session.NewSession(conf)
 	if err != nil {
 		return nil, fmt.Errorf("unable to create awskinesis service session: %s", err.Error())
@@ -79,7 +74,7 @@ func (a AWSKinesis) Fetch() ([]byte, error) {
 	return nil, nil
 }
 
-// NumWorkers returns the number of workers required for this connection
-func (a AWSKinesis) NumWorkers() uint {
-	return a.NumShards
+// NumberOfWorkers returns number of shards to handle by the pool
+func (a AWSKinesis) NumberOfWorkers() uint {
+	return a.NumberOfShards
 }

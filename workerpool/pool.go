@@ -67,7 +67,7 @@ func (wp *WorkerPool) StartWorkers() error {
 			}
 			return nil
 		case e := <-wp.events:
-			count := e.Connection.Source.NumWorkers()
+			count := e.Connection.Source.NumberOfWorkers()
 			if _, ok := wp.jobs[e.Connection.ID]; !ok {
 				wp.jobs[e.Connection.ID] = &job{
 					conn:    e.Connection,

@@ -4,7 +4,7 @@ package connection
 // to satisfy in order to deliver events to the EG
 type Source interface {
 	Fetch() ([]byte, error)
-	NumWorkers() uint
+	NumberOfWorkers() uint
 }
 
 // SourceLoader is where we define individual service types to return
