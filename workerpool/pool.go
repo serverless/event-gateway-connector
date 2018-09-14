@@ -23,7 +23,7 @@ type WorkerPool struct {
 // pool of goroutines. These workers will listen for *watcher.Events and handle the
 // internal *Connection to manage data.
 func New(maxWorkers uint, events <-chan *watcher.Event, log *zap.SugaredLogger) (*WorkerPool, error) {
-	w := &WorkerPool{
+	pool := &WorkerPool{
 		maxWorkers: maxWorkers,
 		log:        log,
 		jobs:       make(map[connection.ID]*job),
@@ -31,22 +31,16 @@ func New(maxWorkers uint, events <-chan *watcher.Event, log *zap.SugaredLogger) 
 		done:       make(chan bool),
 	}
 
-	return w, nil
+	return pool, nil
 }
 
-// NumWorkers returns the maximum number of workers eligible for configuration in the WorkerPool (set at initialization time)
-func (wp *WorkerPool) NumWorkers() uint {
-	return wp.numWorkers
+// Stop sends the done signal to the WorkerPool to clean up all Connections
+func (pool *WorkerPool) Stop() {
+	pool.done <- true
 }
 
-// Close sends the done signal to the WorkerPool to clean up all Connections
-func (wp *WorkerPool) Close() {
-	wp.done <- true
-}
-
-// StartWorkers receives the number of worker goroutines from the main process
-func (wp *WorkerPool) StartWorkers() error {
-
+// Start receives the number of worker goroutines from the main process
+func (pool *WorkerPool) Start() error {
 	// errors channel for workers to send back errors
 	// this will be used by the master to address any fails that come from a worker
 	errors := make(chan workerError)
@@ -57,61 +51,63 @@ func (wp *WorkerPool) StartWorkers() error {
 
 	for {
 		select {
-		case <-wp.done:
+		case <-pool.done:
 			// block & wait for the done signal
-			wp.log.Debugf("received the done signal!")
-			for _, x := range wp.jobs {
-				for _, y := range x.workers {
-					y.done <- true
+			pool.log.Debugf("received the done signal")
+			for _, job := range pool.jobs {
+				for _, worker := range job.workers {
+					worker.done <- true
 				}
 			}
 			return nil
-		case e := <-wp.events:
-			count := e.Connection.Source.NumberOfWorkers()
-			if _, ok := wp.jobs[e.Connection.ID]; !ok {
-				wp.jobs[e.Connection.ID] = &job{
-					conn:    e.Connection,
-					workers: make(map[uint]*worker),
+		case event := <-pool.events:
+			count := event.Connection.Source.NumberOfWorkers()
+			if _, ok := pool.jobs[event.Connection.ID]; !ok {
+				pool.jobs[event.Connection.ID] = &job{
+					connection: event.Connection,
+					workers:    make(map[uint]*worker),
 				}
 			}
 
-			for a := uint(0); a < count; a++ {
-				wp.assignWorker(a, e.Connection, errors, close)
-				wp.numWorkers++
+			for id := uint(0); id < count; id++ {
+				pool.assignWorker(id, event.Connection, errors, close)
+				pool.numWorkers++
 			}
-		case w := <-errors:
+		case workerErr := <-errors:
 			// worker thread errored
 			// would need to figure out retry logic here
-			wp.log.Warnf("received an error from worker %d, error: %s, total: %d", w.id, w.err.Error(), wp.numWorkers)
-			wp.numWorkers--
-			wp.removeWorker(w)
-			wp.assignWorker(w.id, wp.jobs[w.connID].conn, errors, close)
-			wp.numWorkers++
-		case c := <-close:
+			pool.log.Warnf("received an error from worker %d, error: %s, total: %d", workerErr.id, workerErr.err.Error(), pool.numWorkers)
+			pool.numWorkers--
+			pool.removeWorker(workerErr)
+
+			pool.log.Debugf("restarting worker %d from connection %s", workerErr.id, workerErr.connectionID)
+			pool.assignWorker(workerErr.id, pool.jobs[workerErr.connectionID].connection, errors, close)
+			pool.numWorkers++
+		case workerID := <-close:
 			// worker thread closed normally
-			wp.log.Debugf("closing worker %d", c)
+			pool.log.Debugf("closing worker %d", workerID)
 		}
 	}
 }
 
-// removeWorker deducts the specified worker from both the job and workerMap, allowing it to be reassigned
-func (wp *WorkerPool) removeWorker(w workerError) {
-	delete(wp.jobs[w.connID].workers, w.id)
+// removeWorker deducts the specified worker from the job, allowing it to be reassigned
+func (pool *WorkerPool) removeWorker(w workerError) {
+	delete(pool.jobs[w.connectionID].workers, w.id)
 }
 
-// handleEvent processes the new event and signals the requisite worker goroutines
-func (wp *WorkerPool) assignWorker(id uint, c *connection.Connection, errors chan<- workerError, close chan<- uint) {
-	wp.jobs[c.ID].workers[id] = newWorker(id, wp.log, errors, close)
+// assignWorker processes the new event and signals the requisite worker goroutines
+func (pool *WorkerPool) assignWorker(id uint, c *connection.Connection, errors chan<- workerError, close chan<- uint) {
+	pool.jobs[c.ID].workers[id] = newWorker(id, pool.log, errors, close)
 }
 
 func newWorker(id uint, log *zap.SugaredLogger, errors chan<- workerError, close chan<- uint) *worker {
 	w := &worker{
-		id:     id,
-		done:   make(chan bool),
-		recv:   make(chan *connection.Connection),
-		errors: errors,
-		close:  close,
-		log:    log,
+		id:         id,
+		done:       make(chan bool),
+		connection: make(chan *connection.Connection),
+		errors:     errors,
+		close:      close,
+		log:        log,
 	}
 	go w.run()
 	return w
@@ -124,10 +120,10 @@ func (w *worker) run() {
 		case <-w.done:
 			w.log.Debugf("trapped done signal for worker %d...", w.id)
 			return
-		case c := <-w.recv:
+		case c := <-w.connection:
 			w.log.Debugf("worker %d started job:  %s", w.id, c.ID)
 			if err := w.handleConnection(c); err != nil {
-				w.errors <- workerError{id: w.id, connID: c.ID, err: err}
+				w.errors <- workerError{id: w.id, connectionID: c.ID, err: err}
 				return
 			}
 
@@ -151,23 +147,23 @@ func (w *worker) handleConnection(c *connection.Connection) error {
 
 // worker is the internal representation of the worker process
 type worker struct {
-	id     uint
-	recv   chan *connection.Connection
-	errors chan<- workerError
-	close  chan<- uint
-	log    *zap.SugaredLogger
-	done   chan bool
+	id         uint
+	connection chan *connection.Connection
+	errors     chan<- workerError
+	close      chan<- uint
+	done       chan bool
+	log        *zap.SugaredLogger
 }
 
 // job is the interim struct to manage the specific worker for a give connectionID
 type job struct {
-	workers map[uint]*worker
-	conn    *connection.Connection
+	workers    map[uint]*worker
+	connection *connection.Connection
 }
 
 // workerError for cases where the worker ends up failing for a specific reason
 type workerError struct {
-	id     uint
-	connID connection.ID
-	err    error
+	id           uint
+	connectionID connection.ID
+	err          error
 }
