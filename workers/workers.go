@@ -86,6 +86,7 @@ func (wp *WorkerPool) StartWorkers() error {
 			wp.numWorkers--
 			wp.removeWorker(w)
 			wp.assignWorker(w.id, wp.jobs[w.connID].conn, errors, close)
+			wp.numWorkers++
 		case c := <-close:
 			// worker thread closed normally
 			wp.log.Debugf("closing worker %d", c)
