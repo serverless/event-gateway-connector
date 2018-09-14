@@ -4,20 +4,9 @@ import (
 	"time"
 
 	"github.com/serverless/event-gateway-connector/connection"
-	"github.com/serverless/event-gateway-connector/utils"
 	"github.com/serverless/event-gateway-connector/watcher"
 	"go.uber.org/zap"
 )
-
-// worker is the internal representation of the worker process
-type worker struct {
-	id     uint
-	recv   chan *connection.Connection
-	errors chan<- workerError
-	close  chan<- uint
-	log    *zap.SugaredLogger
-	done   chan bool
-}
 
 // WorkerPool is the default struct for our worker pool, containing mostly private values
 // including the maximum workers eligible, current count of workers, etc.
@@ -28,23 +17,6 @@ type WorkerPool struct {
 	jobs       map[connection.ID]*job // map of job handlers assigned to each connection.ID
 	events     <-chan *watcher.Event
 	done       chan bool // signal channel to stop all worker processes
-	stack      *utils.Stack
-}
-
-// job is the interim struct to manage the specific worker for a give connectionID
-type job struct {
-	workers map[uint]*worker
-	conn    *connection.Connection
-}
-
-// define the map of workers to manage
-var workerMap = make(map[uint]*worker)
-
-// workerError for cases where the worker ends up failing for a specific reason
-type workerError struct {
-	id     uint
-	connID connection.ID
-	err    error
 }
 
 // NewPool will accept a few initializer variables in order to stand up the new worker
@@ -59,11 +31,6 @@ func NewPool(log *zap.SugaredLogger, maxWorkers uint, events <-chan *watcher.Eve
 		done:       make(chan bool),
 	}
 
-	// This stack is a helper to know which worker threads are still available to allocate.
-	// Though this is moot in the initial kickoff of workers, this stack becomes helpful
-	// if/when workers either die or are cancelled. Instead of combing the map to find
-	// empty spaces, we can just pop a value off the top and use that
-	w.stack = utils.NewStack()
 	return w, nil
 }
 
@@ -74,10 +41,6 @@ func (wp *WorkerPool) NumWorkers() uint {
 
 // Close sends the done signal to the WorkerPool to clean up all Connections
 func (wp *WorkerPool) Close() {
-	wp.close()
-}
-
-func (wp *WorkerPool) close() {
 	wp.done <- true
 }
 
@@ -92,19 +55,15 @@ func (wp *WorkerPool) StartWorkers() error {
 	// simply dump the worker ID back on the channel
 	close := make(chan uint)
 
-	// fork off the goroutines, at this point each goroutine is unconfigured
-	for i := uint(0); i < wp.maxWorkers; i++ {
-		workerMap[i] = newWorker(i, wp.log, errors, close)
-		wp.stack.Push(i)
-	}
-
 	for {
 		select {
 		case <-wp.done:
 			// block & wait for the done signal
 			wp.log.Debugf("received the done signal!")
-			for x := range workerMap {
-				workerMap[x].done <- true
+			for _, x := range wp.jobs {
+				for _, y := range x.workers {
+					y.done <- true
+				}
 			}
 			return nil
 		case e := <-wp.events:
@@ -117,40 +76,31 @@ func (wp *WorkerPool) StartWorkers() error {
 			}
 
 			for a := uint(0); a < count; a++ {
-				wp.assignWorker(e.Connection)
+				wp.assignWorker(a, e.Connection, errors, close)
+				wp.numWorkers++
 			}
 		case w := <-errors:
 			// worker thread errored
 			// would need to figure out retry logic here
-			wp.log.Warnf("received an error from worker %d, error: %s, total: %d", w.id, w.err.Error(), wp.stack.Length())
+			wp.log.Warnf("received an error from worker %d, error: %s, total: %d", w.id, w.err.Error(), wp.numWorkers)
+			wp.numWorkers--
 			wp.removeWorker(w)
-			wp.assignWorker(wp.jobs[w.connID].conn)
+			wp.assignWorker(w.id, wp.jobs[w.connID].conn, errors, close)
 		case c := <-close:
 			// worker thread closed normally
 			wp.log.Debugf("closing worker %d", c)
-			wp.stack.Push(c)
-			delete(workerMap, c)
 		}
 	}
 }
 
 // removeWorker deducts the specified worker from both the job and workerMap, allowing it to be reassigned
 func (wp *WorkerPool) removeWorker(w workerError) {
-	wp.stack.Push(w.id)
-	delete(workerMap, w.id)
 	delete(wp.jobs[w.connID].workers, w.id)
 }
 
 // handleEvent processes the new event and signals the requisite worker goroutines
-func (wp *WorkerPool) assignWorker(c *connection.Connection) {
-	// receive a connection from the API
-	n, ok := wp.stack.Pop()
-	if !ok {
-		wp.log.Errorf("too many worker threads already assigned (%d of %d)", len(workerMap), wp.numWorkers)
-	}
-
-	workerMap[n].recv <- c
-	wp.jobs[c.ID].workers[n] = workerMap[n]
+func (wp *WorkerPool) assignWorker(id uint, c *connection.Connection, errors chan<- workerError, close chan<- uint) {
+	wp.jobs[c.ID].workers[id] = newWorker(id, wp.log, errors, close)
 }
 
 func newWorker(id uint, log *zap.SugaredLogger, errors chan<- workerError, close chan<- uint) *worker {
@@ -196,4 +146,28 @@ func (w *worker) handleConnection(c *connection.Connection) error {
 	}
 
 	return nil
+}
+
+// worker is the internal representation of the worker process
+type worker struct {
+	id     uint
+	recv   chan *connection.Connection
+	errors chan<- workerError
+	close  chan<- uint
+	log    *zap.SugaredLogger
+	done   chan bool
+}
+
+// job is the interim struct to manage the specific worker for a give connectionID
+type job struct {
+	workers map[uint]*worker
+	conn    *connection.Connection
+	done    chan bool
+}
+
+// workerError for cases where the worker ends up failing for a specific reason
+type workerError struct {
+	id     uint
+	connID connection.ID
+	err    error
 }
