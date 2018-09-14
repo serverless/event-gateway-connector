@@ -51,46 +51,50 @@ func main() {
 	}
 
 	// Watcher
-	watcher := watcher.New(client, prefix, logger.Named("Watcher"))
-	defer watcher.Stop()
 
-	events, err := watcher.Watch()
+	watch := watcher.New(client, connectionsPrefix, logger.Named("Watcher")))
+	defer watch.Stop()
+	events, err := watch.Watch()
 	if err != nil {
 		logger.Fatalf("Unable to watch changes in etcd. Error: %s", err)
 	}
-	go func() {
-		for {
-			event := <-events
-			if event != nil {
-				logger.Debugw("Configuration change detected.", "ID", event.ID, "Connection", event.Connection, "type", event.Type)
+	// go func() {
+	// 	for {
+	// 		event := <-events
+	// 		if event != nil {
+	// 			logger.Debugw("Configuration change detected.", "ID", event.ID, "Connection", event.Connection, "type", event.Type)
 
-				if event.Type == watcher.Created {
-					mutex := concurrency.NewMutex(session, lockPrefix)
+	// 			if event.Type == watcher.Created {
+	// 				mutex := concurrency.NewMutex(session, lockPrefix)
 
-					logger.Debugw("Locking...", "ID", event.ID)
-					ctx, cancel := context.WithTimeout(context.Background(), time.Second*2)
-					err := mutex.Lock(ctx)
-					if err != nil {
-						logger.Debugf("Unable to lock: %s", err)
-						continue
-					}
-					logger.Debugw("Locked.", "ID", event.ID)
+	// 				logger.Debugw("Locking...", "ID", event.ID)
+	// 				ctx, cancel := context.WithTimeout(context.Background(), time.Second*2)
+	// 				err := mutex.Lock(ctx)
+	// 				if err != nil {
+	// 					logger.Debugf("Unable to lock: %s", err)
+	// 					continue
+	// 				}
+	// 				logger.Debugw("Locked.", "ID", event.ID)
 
-					logger.Debugw("Doing some work for 10 seconds...", "ID", event.ID)
-					time.Sleep(time.Second * 10)
+	// 				logger.Debugw("Doing some work for 10 seconds...", "ID", event.ID)
+	// 				time.Sleep(time.Second * 10)
 
-					cancel()
-					mutex.Unlock(context.TODO()) // TODO handler err
-					logger.Debugw("Unlocked.", "ID", event.ID)
-				}
-			}
-		}
-	}()
+	// 				cancel()
+	// 				mutex.Unlock(context.TODO()) // TODO handler err
+	// 				logger.Debugw("Unlocked.", "ID", event.ID)
+	// 			}
+	// 		}
+	// 	}
+	// }()
 
 	// Initalize the WorkerPool
+	session, err := concurrency.NewSession(client)
+	if err != nil {
+		logger.Fatalf("Unable to create session in etcd. Error: %s", err)
+	}
 	wp, err := workerpool.New(*maxWorkers, events, logger.Named("WorkerPool"))
 	if err != nil {
-		logger.Fatal(err)
+		logger.Fatal("Unable to start worker pool. Error: %s", err)
 	}
 	go func() {
 		logger.Fatal(wp.Start())
