@@ -125,10 +125,6 @@ type job struct {
 	mutex      *concurrency.Mutex
 }
 
-func (j *job) run() {
-
-}
-
 // removeWorker deducts the specified worker from the job, allowing it to be reassigned
 func (pool *WorkerPool) removeWorker(w workerError) {
 	delete(pool.jobs[w.connectionID].workers, w.id)
