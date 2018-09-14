@@ -73,7 +73,7 @@ func (pool *WorkerPool) Start() error {
 		case event := <-pool.events:
 			if event.Type == watcher.Created {
 				// acquire lock
-				mutex := concurrency.NewMutex(pool.session, lockPrefix)
+				mutex := concurrency.NewMutex(pool.session, lockPrefix+string(event.ID))
 				pool.log.Debugw("locking...", "connectionID", event.ID)
 				ctx, cancel := context.WithTimeout(context.Background(), time.Second*2)
 				err := mutex.Lock(ctx)
@@ -116,7 +116,7 @@ func (pool *WorkerPool) Start() error {
 	}
 }
 
-const lockPrefix = "serverless-event-gateway-connector/__locks"
+const lockPrefix = "serverless-event-gateway-connector/locks/connections/"
 
 // job is the interim struct to manage the specific worker for a give connectionID
 type job struct {
