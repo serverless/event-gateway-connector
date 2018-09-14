@@ -1,4 +1,4 @@
-package workers
+package workerpool
 
 import (
 	"time"
@@ -19,10 +19,10 @@ type WorkerPool struct {
 	done       chan bool // signal channel to stop all worker processes
 }
 
-// NewPool will accept a few initializer variables in order to stand up the new worker
+// New will accept a few initializer variables in order to stand up the new worker
 // pool of goroutines. These workers will listen for *watcher.Events and handle the
 // internal *Connection to manage data.
-func NewPool(log *zap.SugaredLogger, maxWorkers uint, events <-chan *watcher.Event) (*WorkerPool, error) {
+func New(maxWorkers uint, events <-chan *watcher.Event, log *zap.SugaredLogger) (*WorkerPool, error) {
 	w := &WorkerPool{
 		maxWorkers: maxWorkers,
 		log:        log,

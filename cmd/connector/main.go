@@ -11,7 +11,7 @@ import (
 	"github.com/serverless/event-gateway-connector/httpapi"
 	"github.com/serverless/event-gateway-connector/kv"
 	"github.com/serverless/event-gateway-connector/watcher"
-	"github.com/serverless/event-gateway-connector/workers"
+	"github.com/serverless/event-gateway-connector/workerpool"
 	"go.uber.org/zap"
 
 	flag "github.com/ogier/pflag"
@@ -63,7 +63,7 @@ func main() {
 	}()
 
 	// Initalize the WorkerPool
-	wp, err := workers.NewPool(logger, *maxWorkers, events)
+	wp, err := workerpool.New(*maxWorkers, events, logger)
 	if err != nil {
 		logger.Fatal(err)
 	}

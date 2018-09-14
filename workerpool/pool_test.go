@@ -1,4 +1,4 @@
-package workers_test
+package workerpool_test
 
 import (
 	"encoding/json"

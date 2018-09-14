@@ -288,6 +288,7 @@
     "github.com/aws/aws-sdk-go/service/kinesis/kinesisiface",
     "github.com/coreos/etcd/clientv3",
     "github.com/coreos/etcd/clientv3/namespace",
+    "github.com/coreos/etcd/mvcc/mvccpb",
     "github.com/julienschmidt/httprouter",
     "github.com/ogier/pflag",
     "github.com/segmentio/ksuid",
