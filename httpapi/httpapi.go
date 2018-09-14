@@ -48,8 +48,7 @@ func (h HTTPAPI) deleteConnection(w http.ResponseWriter, r *http.Request, params
 	encoder := json.NewEncoder(w)
 
 	space := params.ByName("space")
-	err := h.Connections.DeleteConnection(space, connection.ID(params.ByName("id")))
-	if err != nil {
+	if err := h.Connections.DeleteConnection(space, connection.ID(params.ByName("id"))); err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		encoder.Encode(&Response{Errors: []Error{{Message: err.Error()}}})
 		return

@@ -2,6 +2,46 @@
 
 
 [[projects]]
+  digest = "1:7455d8981b65ddbcaf460a2ab5a4792e5fefbc02917dc44ddea45498b12cf7d8"
+  name = "github.com/aws/aws-sdk-go"
+  packages = [
+    "aws",
+    "aws/awserr",
+    "aws/awsutil",
+    "aws/client",
+    "aws/client/metadata",
+    "aws/corehandlers",
+    "aws/credentials",
+    "aws/credentials/ec2rolecreds",
+    "aws/credentials/endpointcreds",
+    "aws/credentials/stscreds",
+    "aws/csm",
+    "aws/defaults",
+    "aws/ec2metadata",
+    "aws/endpoints",
+    "aws/request",
+    "aws/session",
+    "aws/signer/v4",
+    "internal/sdkio",
+    "internal/sdkrand",
+    "internal/sdkuri",
+    "internal/shareddefaults",
+    "private/protocol",
+    "private/protocol/json/jsonutil",
+    "private/protocol/jsonrpc",
+    "private/protocol/query",
+    "private/protocol/query/queryutil",
+    "private/protocol/rest",
+    "private/protocol/xml/xmlutil",
+    "service/kinesis",
+    "service/kinesis/kinesisiface",
+    "service/sts",
+  ]
+  pruneopts = "UT"
+  revision = "10d5f1478e28a17062fd79617a8022f5499462d5"
+  version = "v1.15.34"
+
+[[projects]]
   digest = "1:5646e6da151d7d087a0de5790f2d543cf0a04bb1f565de2f4d9e53b24545c462"
   name = "github.com/coreos/etcd"
   packages = [
@@ -16,6 +56,41 @@
   pruneopts = "UT"
   revision = "fca8add78a9d926166eb739b8e4a124434025ba3"
   version = "v3.3.9"
+
+[[projects]]
+  digest = "1:ffe9824d294da03b391f44e1ae8281281b4afc1bdaa9588c9097785e3af10cec"
+  name = "github.com/davecgh/go-spew"
+  packages = ["spew"]
+  pruneopts = "UT"
+  revision = "8991bc29aa16c548c550c7ff78260e27b9ab7c73"
+  version = "v1.1.1"
+
+[[projects]]
+  digest = "1:5abd6a22805b1919f6a6bca0ae58b13cef1f3412812f38569978f43ef02743d4"
+  name = "github.com/go-ini/ini"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "5cf292cae48347c2490ac1a58fe36735fb78df7e"
+  version = "v1.38.2"
+
+[[projects]]
+  digest = "1:e1ff887e232b2d8f4f7c7db15a5fac7be418025afc4dda53c59c765dbb5aa6b4"
+  name = "github.com/go-playground/locales"
+  packages = [
+    ".",
+    "currency",
+  ]
+  pruneopts = "UT"
+  revision = "f63010822830b6fe52288ee52d5a1151088ce039"
+  version = "v0.12.1"
+
+[[projects]]
+  digest = "1:e022cf244bcac1b6ef933f1a2e0adcf6a6dfd7b872d8d41e4d4179bb09a87cbc"
+  name = "github.com/go-playground/universal-translator"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "b32fa301c9fe55953584134cb6853a13c87ec0a1"
+  version = "v0.16.0"
 
 [[projects]]
   digest = "1:3d3a3d38b5ba4934a07e047b3d7397841d8bb69eafdf482260db415290796b19"
@@ -44,6 +119,13 @@
   version = "v1.2.0"
 
 [[projects]]
+  digest = "1:e22af8c7518e1eab6f2eab2b7d7558927f816262586cd6ed9f349c97a6c285c4"
+  name = "github.com/jmespath/go-jmespath"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "0b12d6b5"
+
+[[projects]]
   digest = "1:ccfa094742ce1c97fd3f6481e1bf98f3d9862510eee2bc0eb56e2745396bd330"
   name = "github.com/julienschmidt/httprouter"
   packages = ["."]
@@ -52,12 +134,36 @@
   version = "v1.1"
 
 [[projects]]
+  digest = "1:8fd3a15613c7e70cceff3aa03dd57560dba87c4868864e397d5eb2f14addd3f5"
+  name = "github.com/ogier/pflag"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "32a05c62658bd1d7c7e75cbc8195de5d585fde0f"
+  version = "v0.0.1"
+
+[[projects]]
+  digest = "1:0028cb19b2e4c3112225cd871870f2d9cf49b9b4276531f03438a88e94be86fe"
+  name = "github.com/pmezard/go-difflib"
+  packages = ["difflib"]
+  pruneopts = "UT"
+  revision = "792786c7400a136282c1664665ae0a8db921c6c2"
+  version = "v1.0.0"
+
+[[projects]]
   digest = "1:8a3e7525dc0cf0236b163166800ecbc78d6c8c5d7ac956996e7b3bef8cfadc41"
   name = "github.com/segmentio/ksuid"
   packages = ["."]
   pruneopts = "UT"
   revision = "112f929a3020abfcd06b77c963ec919130796a35"
   version = "1.0.1"
+
+[[projects]]
+  digest = "1:18752d0b95816a1b777505a97f71c7467a8445b8ffb55631a7bf779f6ba4fa83"
+  name = "github.com/stretchr/testify"
+  packages = ["assert"]
+  pruneopts = "UT"
+  revision = "f35b8ab0b5a2cef36673838d662e249dd9c94686"
+  version = "v1.2.2"
 
 [[projects]]
   digest = "1:777e729b475d3895c7229552aa10076f0d177daf37c0a72258006d046d329960"
@@ -163,15 +269,32 @@
   revision = "5b3c4e850e90a4cf6a20ebd46c8b32a0a3afcb9e"
   version = "v1.7.5"
 
+[[projects]]
+  digest = "1:e2f64cca6e235f32cd4c2f9be9ae0cda1f8608fc6fdb68936e8d10e4e0bb074d"
+  name = "gopkg.in/go-playground/validator.v9"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "e69e9a28bb62b977fdc58d051f1bb477b7cbe486"
+  version = "v9.21.0"
+
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
   input-imports = [
+    "github.com/aws/aws-sdk-go/aws",
+    "github.com/aws/aws-sdk-go/aws/credentials",
+    "github.com/aws/aws-sdk-go/aws/session",
+    "github.com/aws/aws-sdk-go/service/kinesis",
+    "github.com/aws/aws-sdk-go/service/kinesis/kinesisiface",
     "github.com/coreos/etcd/clientv3",
     "github.com/coreos/etcd/clientv3/namespace",
+    "github.com/coreos/etcd/mvcc/mvccpb",
     "github.com/julienschmidt/httprouter",
+    "github.com/ogier/pflag",
     "github.com/segmentio/ksuid",
+    "github.com/stretchr/testify/assert",
     "go.uber.org/zap",
+    "gopkg.in/go-playground/validator.v9",
   ]
   solver-name = "gps-cdcl"
   solver-version = 1

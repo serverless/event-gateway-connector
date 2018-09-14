@@ -11,12 +11,19 @@ import (
 	"github.com/serverless/event-gateway-connector/httpapi"
 	"github.com/serverless/event-gateway-connector/kv"
 	"github.com/serverless/event-gateway-connector/watcher"
+	"github.com/serverless/event-gateway-connector/workerpool"
 	"go.uber.org/zap"
+
+	flag "github.com/ogier/pflag"
 )
 
 const prefix = "serverless-event-gateway-connector/"
 
+var maxWorkers = flag.UintP("workers", "w", 10, "maximum number of workers for the pool")
+
 func main() {
+	flag.Parse()
+
 	// logger
 	rawLogger, _ := zap.NewDevelopment()
 	defer rawLogger.Sync()
@@ -41,6 +48,7 @@ func main() {
 	// Watcher
 	watcher := watcher.New(client, prefix, logger)
 	defer watcher.Stop()
+
 	events, err := watcher.Watch()
 	if err != nil {
 		logger.Fatalf("Unable to watch changes in etcd. Error: %s", err)
@@ -54,6 +62,17 @@ func main() {
 		}
 	}()
 
+	// Initalize the WorkerPool
+	wp, err := workerpool.New(*maxWorkers, events, logger)
+	if err != nil {
+		logger.Fatal(err)
+	}
+	go func() {
+		logger.Debugf("kicking off the workerpool with %d workers", wp.NumWorkers())
+		logger.Fatal(wp.StartWorkers())
+	}()
+	defer wp.Close()
+
 	// Server
 	srv := httpapi.ConfigAPI(store)
 	go func() {
@@ -61,6 +80,8 @@ func main() {
 		logger.Fatal(srv.ListenAndServe())
 	}()
 	defer srv.Shutdown(context.TODO())
+
+	logger.Debugf("worker pool is: %+v", wp)
 
 	// Setup signal capturing
 	stop := make(chan os.Signal, 1)
