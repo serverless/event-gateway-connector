@@ -17,11 +17,11 @@ import (
 	"go.uber.org/zap"
 
 	flag "github.com/ogier/pflag"
+
+	_ "github.com/serverless/event-gateway-connector/sources/awskinesis"
 )
 
-const prefix = "serverless-event-gateway-connector/"
-const connectionsPrefix = prefix + "connections"
-const lockPrefix = prefix + "__locks"
+const connectionsPrefix = "serverless-event-gateway-connector/connections"
 
 var maxWorkers = flag.UintP("workers", "w", 10, "Maximum number of workers for the pool.")
 var port = flag.IntP("port", "p", 4002, "Port to serve configuration API on")
@@ -52,47 +52,19 @@ func main() {
 
 	// Watcher
 
-	watch := watcher.New(client, connectionsPrefix, logger.Named("Watcher")))
+	watch := watcher.New(client, connectionsPrefix, logger.Named("Watcher"))
 	defer watch.Stop()
 	events, err := watch.Watch()
 	if err != nil {
 		logger.Fatalf("Unable to watch changes in etcd. Error: %s", err)
 	}
-	// go func() {
-	// 	for {
-	// 		event := <-events
-	// 		if event != nil {
-	// 			logger.Debugw("Configuration change detected.", "ID", event.ID, "Connection", event.Connection, "type", event.Type)
-
-	// 			if event.Type == watcher.Created {
-	// 				mutex := concurrency.NewMutex(session, lockPrefix)
-
-	// 				logger.Debugw("Locking...", "ID", event.ID)
-	// 				ctx, cancel := context.WithTimeout(context.Background(), time.Second*2)
-	// 				err := mutex.Lock(ctx)
-	// 				if err != nil {
-	// 					logger.Debugf("Unable to lock: %s", err)
-	// 					continue
-	// 				}
-	// 				logger.Debugw("Locked.", "ID", event.ID)
-
-	// 				logger.Debugw("Doing some work for 10 seconds...", "ID", event.ID)
-	// 				time.Sleep(time.Second * 10)
-
-	// 				cancel()
-	// 				mutex.Unlock(context.TODO()) // TODO handler err
-	// 				logger.Debugw("Unlocked.", "ID", event.ID)
-	// 			}
-	// 		}
-	// 	}
-	// }()
 
 	// Initalize the WorkerPool
 	session, err := concurrency.NewSession(client)
 	if err != nil {
 		logger.Fatalf("Unable to create session in etcd. Error: %s", err)
 	}
-	wp, err := workerpool.New(*maxWorkers, events, logger.Named("WorkerPool"))
+	wp, err := workerpool.New(session, *maxWorkers, events, logger.Named("WorkerPool"))
 	if err != nil {
 		logger.Fatal("Unable to start worker pool. Error: %s", err)
 	}

@@ -1,7 +1,10 @@
 package workerpool
 
 import (
+	"context"
 	"time"
+
+	"github.com/coreos/etcd/clientv3/concurrency"
 
 	"github.com/serverless/event-gateway-connector/connection"
 	"github.com/serverless/event-gateway-connector/watcher"
@@ -13,6 +16,7 @@ import (
 type WorkerPool struct {
 	maxWorkers uint
 	numWorkers uint
+	session    *concurrency.Session
 	log        *zap.SugaredLogger
 	jobs       map[connection.ID]*job // map of job handlers assigned to each connection.ID
 	events     <-chan *watcher.Event
@@ -22,9 +26,10 @@ type WorkerPool struct {
 // New will accept a few initializer variables in order to stand up the new worker
 // pool of goroutines. These workers will listen for *watcher.Events and handle the
 // internal *Connection to manage data.
-func New(maxWorkers uint, events <-chan *watcher.Event, log *zap.SugaredLogger) (*WorkerPool, error) {
+func New(session *concurrency.Session, maxWorkers uint, events <-chan *watcher.Event, log *zap.SugaredLogger) (*WorkerPool, error) {
 	pool := &WorkerPool{
 		maxWorkers: maxWorkers,
+		session:    session,
 		log:        log,
 		jobs:       make(map[connection.ID]*job),
 		events:     events,
@@ -58,20 +63,41 @@ func (pool *WorkerPool) Start() error {
 				for _, worker := range job.workers {
 					worker.done <- true
 				}
+
+				if err := job.mutex.Unlock(context.TODO()); err != nil {
+					pool.log.Errorf("unable to unlock", "error", err, "connectionID", job.connection.ID)
+				}
+				pool.log.Debugf("unlocked", "connectionID", job.connection.ID)
 			}
 			return nil
 		case event := <-pool.events:
-			count := event.Connection.Source.NumberOfWorkers()
-			if _, ok := pool.jobs[event.Connection.ID]; !ok {
-				pool.jobs[event.Connection.ID] = &job{
-					connection: event.Connection,
-					workers:    make(map[uint]*worker),
+			if event.Type == watcher.Created {
+				// acquire lock
+				mutex := concurrency.NewMutex(pool.session, lockPrefix)
+				pool.log.Debugw("locking...", "connectionID", event.ID)
+				ctx, cancel := context.WithTimeout(context.Background(), time.Second*2)
+				err := mutex.Lock(ctx)
+				cancel()
+				if err != nil {
+					pool.log.Debugw("unable to lock", "error", err, "connectionID", event.ID)
+					continue
 				}
-			}
+				pool.log.Debugw("lock acquired", "ID", event.ID)
 
-			for id := uint(0); id < count; id++ {
-				pool.assignWorker(id, event.Connection, errors, close)
-				pool.numWorkers++
+				// stark job
+				count := event.Connection.Source.NumberOfWorkers()
+				if _, ok := pool.jobs[event.Connection.ID]; !ok {
+					pool.jobs[event.Connection.ID] = &job{
+						connection: event.Connection,
+						workers:    make(map[uint]*worker),
+						mutex:      mutex,
+					}
+				}
+
+				for id := uint(0); id < count; id++ {
+					pool.assignWorker(id, event.Connection, errors, close)
+					pool.numWorkers++
+				}
 			}
 		case workerErr := <-errors:
 			// worker thread errored
@@ -85,9 +111,22 @@ func (pool *WorkerPool) Start() error {
 			pool.numWorkers++
 		case workerID := <-close:
 			// worker thread closed normally
-			pool.log.Debugf("closing worker %d", workerID)
+			pool.log.Debugw("closing worker", "workerID", workerID)
 		}
 	}
+}
+
+const lockPrefix = "serverless-event-gateway-connector/__locks"
+
+// job is the interim struct to manage the specific worker for a give connectionID
+type job struct {
+	workers    map[uint]*worker
+	connection *connection.Connection
+	mutex      *concurrency.Mutex
+}
+
+func (j *job) run() {
+
 }
 
 // removeWorker deducts the specified worker from the job, allowing it to be reassigned
@@ -96,15 +135,15 @@ func (pool *WorkerPool) removeWorker(w workerError) {
 }
 
 // assignWorker processes the new event and signals the requisite worker goroutines
-func (pool *WorkerPool) assignWorker(id uint, c *connection.Connection, errors chan<- workerError, close chan<- uint) {
-	pool.jobs[c.ID].workers[id] = newWorker(id, pool.log, errors, close)
+func (pool *WorkerPool) assignWorker(id uint, conn *connection.Connection, errors chan<- workerError, close chan<- uint) {
+	pool.jobs[conn.ID].workers[id] = newWorker(id, conn, errors, close, pool.log)
 }
 
-func newWorker(id uint, log *zap.SugaredLogger, errors chan<- workerError, close chan<- uint) *worker {
+func newWorker(id uint, conn *connection.Connection, errors chan<- workerError, close chan<- uint, log *zap.SugaredLogger) *worker {
 	w := &worker{
 		id:         id,
 		done:       make(chan bool),
-		connection: make(chan *connection.Connection),
+		connection: conn,
 		errors:     errors,
 		close:      close,
 		log:        log,
@@ -114,51 +153,37 @@ func newWorker(id uint, log *zap.SugaredLogger, errors chan<- workerError, close
 }
 
 func (w *worker) run() {
-	w.log.Debugf("kicked off worker #%02d...", w.id)
+	w.log.Debugw("kicked off worker", "workerID", w.id)
 	for {
 		select {
 		case <-w.done:
-			w.log.Debugf("trapped done signal for worker %d...", w.id)
+			w.log.Debugw("trapped done signal", "workerID", w.id)
 			return
-		case c := <-w.connection:
-			w.log.Debugf("worker %d started job:  %s", w.id, c.ID)
-			if err := w.handleConnection(c); err != nil {
-				w.errors <- workerError{id: w.id, connectionID: c.ID, err: err}
-				return
+
+		default:
+			// perform the actual connection here
+			for i := 0; i < 3; i++ {
+				w.log.Debugf("would be handling the stuff here: %d, %+v", w.id, w.connection)
+				time.Sleep(3 * time.Second)
 			}
 
-			w.log.Debugf("worker %d finished job: %s", w.id, c.ID)
+			// in case of error:
+			// w.errors <- workerError{id: w.id, connectionID: c.ID, err: err}
+			w.log.Debugw("worker finished job", "workerID", w.id, "connectionID", w.connection.ID)
 			w.close <- w.id
 			return
 		}
 	}
 }
 
-// handleConnection will actually spin up and handle the connection
-func (w *worker) handleConnection(c *connection.Connection) error {
-	// perform the actual connection here
-	for i := 0; i < 3; i++ {
-		w.log.Debugf("would be handling the stuff here: %d, %+v", w.id, c)
-		time.Sleep(3 * time.Second)
-	}
-
-	return nil
-}
-
 // worker is the internal representation of the worker process
 type worker struct {
 	id         uint
-	connection chan *connection.Connection
+	connection *connection.Connection
 	errors     chan<- workerError
 	close      chan<- uint
 	done       chan bool
 	log        *zap.SugaredLogger
-}
-
-// job is the interim struct to manage the specific worker for a give connectionID
-type job struct {
-	workers    map[uint]*worker
-	connection *connection.Connection
 }
 
 // workerError for cases where the worker ends up failing for a specific reason
