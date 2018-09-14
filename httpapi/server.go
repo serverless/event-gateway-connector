@@ -1,8 +1,8 @@
 package httpapi
 
 import (
+	"fmt"
 	"net/http"
-	"strconv"
 	"time"
 
 	"github.com/julienschmidt/httprouter"
@@ -17,7 +17,7 @@ func ConfigAPI(store connection.Service, port int) *http.Server {
 	api.RegisterRoutes(router)
 
 	handler := &http.Server{
-		Addr:         ":" + strconv.Itoa(port),
+		Addr:         fmt.Sprintf(":%d", port),
 		Handler:      router,
 		ReadTimeout:  3 * time.Second,
 		WriteTimeout: 3 * time.Second,

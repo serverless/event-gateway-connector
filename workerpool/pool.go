@@ -65,9 +65,9 @@ func (pool *WorkerPool) Start() error {
 				}
 
 				if err := job.mutex.Unlock(context.TODO()); err != nil {
-					pool.log.Errorf("unable to unlock", "error", err, "connectionID", job.connection.ID)
+					pool.log.Errorw("unable to unlock", "error", err, "connectionID", job.connection.ID)
 				}
-				pool.log.Debugf("unlocked", "connectionID", job.connection.ID)
+				pool.log.Debugw("unlocked", "connectionID", job.connection.ID)
 			}
 			return nil
 		case event := <-pool.events:
@@ -82,9 +82,9 @@ func (pool *WorkerPool) Start() error {
 					pool.log.Debugw("unable to lock", "error", err, "connectionID", event.ID)
 					continue
 				}
-				pool.log.Debugw("lock acquired", "ID", event.ID)
+				pool.log.Debugw("lock acquired", "connectionID", event.ID)
 
-				// stark job
+				// start job
 				count := event.Connection.Source.NumberOfWorkers()
 				if _, ok := pool.jobs[event.Connection.ID]; !ok {
 					pool.jobs[event.Connection.ID] = &job{
@@ -102,11 +102,11 @@ func (pool *WorkerPool) Start() error {
 		case workerErr := <-errors:
 			// worker thread errored
 			// would need to figure out retry logic here
-			pool.log.Warnf("received an error from worker %d, error: %s, total: %d", workerErr.id, workerErr.err.Error(), pool.numWorkers)
+			pool.log.Warnw("received an error from worker", "workerID", workerErr.id, "error", workerErr.err.Error(), "total", pool.numWorkers)
 			pool.numWorkers--
 			pool.removeWorker(workerErr)
 
-			pool.log.Debugf("restarting worker %d from connection %s", workerErr.id, workerErr.connectionID)
+			pool.log.Debugf("restarting worker", "workerID", workerErr.id, "connectionID", workerErr.connectionID)
 			pool.assignWorker(workerErr.id, pool.jobs[workerErr.connectionID].connection, errors, close)
 			pool.numWorkers++
 		case workerID := <-close:

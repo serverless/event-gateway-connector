@@ -4,7 +4,6 @@ import (
 	"context"
 	"os"
 	"os/signal"
-	"strconv"
 	"time"
 
 	etcd "github.com/coreos/etcd/clientv3"
@@ -76,7 +75,7 @@ func main() {
 	// Server
 	srv := httpapi.ConfigAPI(store, *port)
 	go func() {
-		logger.Debugf("Starting Config API on port: " + strconv.Itoa(*port))
+		logger.Debugf("Starting Config API on port: %d", *port)
 		logger.Fatal(srv.ListenAndServe())
 	}()
 	defer srv.Shutdown(context.TODO())
