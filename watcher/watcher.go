@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strings"
 
 	"github.com/coreos/etcd/mvcc/mvccpb"
 
@@ -61,7 +60,7 @@ func (w *Watcher) Watch() (<-chan *Event, error) {
 			}
 
 			for _, watchEvent := range resp.Events {
-				event := &Event{ID: extractIDFromKey(watchEvent.Kv.Key)}
+				event := &Event{ID: connection.ID(string(watchEvent.Kv.Key))}
 
 				if watchEvent.Type == mvccpb.PUT {
 					event.Type = Created
@@ -126,8 +125,4 @@ func (w *Watcher) list() ([]*Event, error) {
 	}
 
 	return list, nil
-}
-
-func extractIDFromKey(key []byte) connection.ID {
-	return connection.ID(strings.Split(string(key), "/")[1])
 }

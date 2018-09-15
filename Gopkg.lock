@@ -47,6 +47,7 @@
   packages = [
     "auth/authpb",
     "clientv3",
+    "clientv3/concurrency",
     "clientv3/namespace",
     "etcdserver/api/v3rpc/rpctypes",
     "etcdserver/etcdserverpb",
@@ -287,6 +288,7 @@
     "github.com/aws/aws-sdk-go/service/kinesis",
     "github.com/aws/aws-sdk-go/service/kinesis/kinesisiface",
     "github.com/coreos/etcd/clientv3",
+    "github.com/coreos/etcd/clientv3/concurrency",
     "github.com/coreos/etcd/clientv3/namespace",
     "github.com/coreos/etcd/mvcc/mvccpb",
     "github.com/julienschmidt/httprouter",

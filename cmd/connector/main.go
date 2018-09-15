@@ -7,6 +7,7 @@ import (
 	"time"
 
 	etcd "github.com/coreos/etcd/clientv3"
+	"github.com/coreos/etcd/clientv3/concurrency"
 	"github.com/coreos/etcd/clientv3/namespace"
 	"github.com/serverless/event-gateway-connector/httpapi"
 	"github.com/serverless/event-gateway-connector/kv"
@@ -15,11 +16,14 @@ import (
 	"go.uber.org/zap"
 
 	flag "github.com/ogier/pflag"
+
+	_ "github.com/serverless/event-gateway-connector/sources/awskinesis"
 )
 
-const prefix = "serverless-event-gateway-connector/"
+const connectionsPrefix = "serverless-event-gateway-connector/connections"
 
-var maxWorkers = flag.UintP("workers", "w", 10, "maximum number of workers for the pool")
+var maxWorkers = flag.UintP("workers", "w", 10, "Maximum number of workers for the pool.")
+var port = flag.IntP("port", "p", 4002, "Port to serve configuration API on")
 
 func main() {
 	flag.Parse()
@@ -41,31 +45,27 @@ func main() {
 
 	// KV service
 	store := &kv.Store{
-		Client: namespace.NewKV(client, prefix),
+		Client: namespace.NewKV(client, connectionsPrefix),
 		Log:    logger,
 	}
 
 	// Watcher
-	watcher := watcher.New(client, prefix, logger.Named("Watcher"))
-	defer watcher.Stop()
 
-	events, err := watcher.Watch()
+	watch := watcher.New(client, connectionsPrefix, logger.Named("Watcher"))
+	events, err := watch.Watch()
 	if err != nil {
 		logger.Fatalf("Unable to watch changes in etcd. Error: %s", err)
 	}
-	go func() {
-		for {
-			event := <-events
-			if event != nil {
-				logger.Debugw("Configuration change detected.", "ID", event.ID, "Connection", event.Connection, "type", event.Type)
-			}
-		}
-	}()
+	defer watch.Stop()
 
 	// Initalize the WorkerPool
-	wp, err := workerpool.New(*maxWorkers, events, logger.Named("WorkerPool"))
+	session, err := concurrency.NewSession(client)
 	if err != nil {
-		logger.Fatal(err)
+		logger.Fatalf("Unable to create session in etcd. Error: %s", err)
+	}
+	wp, err := workerpool.New(session, *maxWorkers, events, logger.Named("WorkerPool"))
+	if err != nil {
+		logger.Fatal("Unable to start worker pool. Error: %s", err)
 	}
 	go func() {
 		logger.Fatal(wp.Start())
@@ -73,9 +73,9 @@ func main() {
 	defer wp.Stop()
 
 	// Server
-	srv := httpapi.ConfigAPI(store)
+	srv := httpapi.ConfigAPI(store, *port)
 	go func() {
-		logger.Debugf("Starting Config API on port: 4002")
+		logger.Debugf("Starting Config API on port: %d", *port)
 		logger.Fatal(srv.ListenAndServe())
 	}()
 	defer srv.Shutdown(context.TODO())
