@@ -27,49 +27,49 @@ type WorkerPool struct {
 // New will accept a few initializer variables in order to stand up the new worker
 // pool of goroutines. These workers will listen for *watcher.Events and handle the
 // internal *Connection to manage data.
-func New(session *concurrency.Session, maxWorkers uint, events <-chan *watcher.Event, log *zap.SugaredLogger) (*WorkerPool, error) {
-	pool := &WorkerPool{
+func New(session *concurrency.Session, maxWorkers uint, events <-chan *watcher.Event, log *zap.SugaredLogger) *WorkerPool {
+	return &WorkerPool{
 		maxWorkers: maxWorkers,
 		session:    session,
 		log:        log,
 		jobs:       make(map[connection.ID]*job),
 		events:     events,
 	}
-
-	return pool, nil
 }
 
-// Start listens on events channel and tries to start a job and workers for every connection.
-func (pool *WorkerPool) Start() error {
+// Start listens on events channel and tries to start a job for every connection.
+func (pool *WorkerPool) Start() {
 	for {
-		event := <-pool.events
-		if event.Type == watcher.Created {
-			job, err := newJob(pool.session, event.Connection, pool.log.Named("job"))
-			if err != nil {
-				pool.log.Debugw("creating new job failed", "error", err, "connectionID", event.ID)
-				continue
+		event, more := <-pool.events
+		if more {
+			if event.Type == watcher.Created {
+				job, err := newJob(pool.session, event.Connection, pool.log.Named("job"))
+				if err != nil {
+					pool.log.Debugw("creating new job failed", "error", err, "connectionID", event.ID)
+					continue
+				}
+
+				job.start()
+
+				pool.jobs[event.ID] = job
+				pool.numWorkers += event.Connection.Source.NumberOfWorkers()
 			}
-
-			job.start()
-
-			pool.jobs[event.ID] = job
-			pool.numWorkers += event.Connection.Source.NumberOfWorkers()
 		}
 	}
 }
 
-// Stop is a blocking function waiting for all jobs (and workers) to stop
+// Stop is a blocking function waiting for all jobs (and workers) to stop.
 func (pool *WorkerPool) Stop() {
-	pool.log.Debugf("stopping all jobs")
-
 	for _, job := range pool.jobs {
 		job.stop()
 	}
+
+	pool.log.Debugf("all jobs stopped")
 }
 
 const lockPrefix = "serverless-event-gateway-connector/locks/connections/"
 
-// job is the interim struct to manage the specific worker for a give connectionID
+// job is the interim struct to manage workers for a give connection.
 type job struct {
 	connection *connection.Connection
 	mutex      *concurrency.Mutex
@@ -79,7 +79,7 @@ type job struct {
 	log        *zap.SugaredLogger
 }
 
-// newJob creates new job an tries to lock the connection in etcd
+// newJob creates new job an tries to lock the connection in etcd.
 func newJob(session *concurrency.Session, conn *connection.Connection, log *zap.SugaredLogger) (*job, error) {
 	mutex := concurrency.NewMutex(session, lockPrefix+string(conn.ID))
 
@@ -95,7 +95,6 @@ func newJob(session *concurrency.Session, conn *connection.Connection, log *zap.
 		connection: conn,
 		mutex:      mutex,
 		workers:    make(map[uint]*worker),
-		done:       make(chan bool),
 		waitGroup:  &sync.WaitGroup{},
 		log:        log,
 	}, nil
@@ -103,17 +102,21 @@ func newJob(session *concurrency.Session, conn *connection.Connection, log *zap.
 
 func (j *job) start() {
 	for id := uint(0); id < j.connection.Source.NumberOfWorkers(); id++ {
-		j.workers[id] = newWorker(id, j.connection, j.done, j.waitGroup, j.log.Named("worker"))
-		go j.workers[id].run()
+		worker := newWorker(id, j.connection, j.waitGroup, j.log.Named("worker"))
+		go worker.run()
+
+		j.workers[id] = worker
 		j.waitGroup.Add(1)
 	}
 }
 
 func (j *job) stop() {
-	j.log.Debugw("stopping a job", "connectionID", j.connection.ID)
-
-	j.done <- true
+	for _, worker := range j.workers {
+		worker.done <- true
+	}
 	j.waitGroup.Wait()
+
+	j.log.Debugw("job stopped", "connectionID", j.connection.ID)
 
 	if err := j.mutex.Unlock(context.TODO()); err != nil {
 		j.log.Errorw("unable to unlock connection", "error", err, "connectionID", j.connection.ID)
@@ -125,16 +128,16 @@ func (j *job) stop() {
 type worker struct {
 	id         uint
 	connection *connection.Connection
-	done       <-chan bool
+	done       chan bool
 	waitGroup  *sync.WaitGroup
 	log        *zap.SugaredLogger
 }
 
-func newWorker(id uint, conn *connection.Connection, done <-chan bool, wg *sync.WaitGroup, log *zap.SugaredLogger) *worker {
+func newWorker(id uint, conn *connection.Connection, wg *sync.WaitGroup, log *zap.SugaredLogger) *worker {
 	w := &worker{
 		id:         id,
 		connection: conn,
-		done:       done,
+		done:       make(chan bool),
 		waitGroup:  wg,
 		log:        log,
 	}

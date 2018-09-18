@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"net/http"
 	"os"
 	"os/signal"
+	"syscall"
 	"time"
 
 	etcd "github.com/coreos/etcd/clientv3"
@@ -28,7 +30,11 @@ var port = flag.IntP("port", "p", 4002, "Port to serve configuration API on")
 func main() {
 	flag.Parse()
 
-	// logger
+	// Setup signal capturing
+	stop := make(chan os.Signal, 1)
+	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
+
+	// Logger
 	rawLogger, _ := zap.NewDevelopment()
 	defer rawLogger.Sync()
 	logger := rawLogger.Sugar()
@@ -39,7 +45,7 @@ func main() {
 		DialTimeout: 2 * time.Second,
 	})
 	if err != nil {
-		logger.Fatalf("Unable to connect to etcd. Error: %s", err)
+		logger.Fatalf("unable to connect to etcd. Error: %s", err)
 	}
 	defer client.Close()
 
@@ -50,40 +56,37 @@ func main() {
 	}
 
 	// Watcher
-
 	watch := watcher.New(client, connectionsPrefix, logger.Named("Watcher"))
 	events, err := watch.Watch()
 	if err != nil {
-		logger.Fatalf("Unable to watch changes in etcd. Error: %s", err)
+		logger.Fatalf("unable to watch changes in etcd. Error: %s", err)
 	}
 	defer watch.Stop()
 
 	// Initalize the WorkerPool
 	session, err := concurrency.NewSession(client)
 	if err != nil {
-		logger.Fatalf("Unable to create session in etcd. Error: %s", err)
+		logger.Fatalf("unable to create session in etcd. Error: %s", err)
 	}
-	wp, err := workerpool.New(session, *maxWorkers, events, logger.Named("WorkerPool"))
-	if err != nil {
-		logger.Fatal("Unable to start worker pool. Error: %s", err)
-	}
-	go func() {
-		logger.Fatal(wp.Start())
-	}()
+	wp := workerpool.New(session, *maxWorkers, events, logger.Named("WorkerPool"))
+	go wp.Start()
 	defer wp.Stop()
 
 	// Server
 	srv := httpapi.ConfigAPI(store, *port)
 	go func() {
-		logger.Debugf("Starting Config API on port: %d", *port)
-		logger.Fatal(srv.ListenAndServe())
+		logger.Debugf("starting Config API on port: %d", *port)
+		if err := srv.ListenAndServe(); err != nil {
+			if err != http.ErrServerClosed {
+				logger.Errorw("unable to start Config API server", "error", err)
+			}
+
+			stop <- os.Interrupt
+		}
 	}()
 	defer srv.Shutdown(context.TODO())
 
-	// Setup signal capturing
-	stop := make(chan os.Signal, 1)
-	signal.Notify(stop, os.Interrupt)
 	<-stop
 
-	logger.Debugf("Cleaning up resources...")
+	logger.Debugf("cleaning up resources...")
 }
