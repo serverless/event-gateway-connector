@@ -42,7 +42,7 @@
   version = "v1.15.34"
 
 [[projects]]
-  digest = "1:5646e6da151d7d087a0de5790f2d543cf0a04bb1f565de2f4d9e53b24545c462"
+  digest = "1:f02ffb1b642c0ac436f24bb8b9a5b859aec7f64858e59ec9bd4b1ad6f29688cd"
   name = "github.com/coreos/etcd"
   packages = [
     "auth/authpb",
