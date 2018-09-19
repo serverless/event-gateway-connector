@@ -38,23 +38,33 @@ func New(session *concurrency.Session, maxWorkers uint, events <-chan *watcher.E
 
 // Start listens on events channel and tries to start a job for every connection.
 func (pool *WorkerPool) Start() {
-	for {
-		event, more := <-pool.events
-		if more {
-			if event.Type == watcher.Created {
-				job, err := newJob(pool.session, event.Connection, pool.log.Named("job"))
-				if err != nil {
-					pool.log.Debugw("creating new job failed", "error", err, "connectionID", event.ID)
-					continue
+	go func() {
+		for {
+			event, more := <-pool.events
+			if more {
+				pool.log.Debugw("event received", "connectionID", event.ID, "type", event.Type)
+
+				switch event.Type {
+				case watcher.Created:
+					job, err := newJob(pool.session, event.Connection, pool.log.Named("job"))
+					if err != nil {
+						pool.log.Debugw("creating new job failed", "error", err, "connectionID", event.ID)
+						continue
+					}
+
+					job.start()
+
+					pool.jobs[event.ID] = job
+					pool.numWorkers += event.Connection.Source.NumberOfWorkers()
+				case watcher.Deleted:
+					if job, exists := pool.jobs[event.ID]; exists {
+						job.stop()
+						delete(pool.jobs, event.ID)
+					}
 				}
-
-				job.start()
-
-				pool.jobs[event.ID] = job
-				pool.numWorkers += event.Connection.Source.NumberOfWorkers()
 			}
 		}
-	}
+	}()
 }
 
 // Stop is a blocking function waiting for all jobs (and workers) to stop.
@@ -81,13 +91,12 @@ type job struct {
 func newJob(session *concurrency.Session, conn *connection.Connection, log *zap.SugaredLogger) (*job, error) {
 	mutex := concurrency.NewMutex(session, lockPrefix+string(conn.ID))
 
-	log.Debugw("locking connection...", "connectionID", conn.ID)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*2)
 	defer cancel()
 	if err := mutex.Lock(ctx); err != nil {
 		return nil, err
 	}
-	log.Debugw("connection lock acquired", "connectionID", conn.ID)
+	log.Debugw("lock acquired", "connectionID", conn.ID)
 
 	return &job{
 		connection: conn,
@@ -114,12 +123,10 @@ func (j *job) stop() {
 	}
 	j.waitGroup.Wait()
 
-	j.log.Debugw("job stopped", "connectionID", j.connection.ID)
-
 	if err := j.mutex.Unlock(context.TODO()); err != nil {
 		j.log.Errorw("unable to unlock connection", "error", err, "connectionID", j.connection.ID)
 	}
-	j.log.Debugw("connection unlocked", "connectionID", j.connection.ID)
+	j.log.Debugw("lock released", "connectionID", j.connection.ID)
 }
 
 // worker is the internal representation of the worker process
