@@ -60,6 +60,7 @@ func (pool *WorkerPool) Start() {
 					if job, exists := pool.jobs[event.ID]; exists {
 						job.stop()
 						delete(pool.jobs, event.ID)
+						pool.numWorkers -= job.connection.Source.NumberOfWorkers()
 					}
 				}
 			}
