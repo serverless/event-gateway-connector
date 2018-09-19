@@ -158,6 +158,9 @@ func newWorker(id uint, conn *connection.Connection, wg *sync.WaitGroup, log *za
 func (w *worker) run() {
 	w.log.Debugw("kicked off worker", "workerID", w.id)
 	defer w.waitGroup.Done()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	for {
 		select {
 		case <-w.done:

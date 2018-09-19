@@ -1,6 +1,7 @@
 package awskinesis
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 
@@ -82,7 +83,7 @@ func (a AWSKinesis) validate() error {
 }
 
 // Fetch retrieves the next document from the awskinesis source
-func (a AWSKinesis) Fetch(shardID int) error {
+func (a AWSKinesis) Fetch(ctx context.Context, shardID uint) error {
 	// set up the shard iterator for our particular shardID
 	// NOTE: may want to make the ShardIteratorType into a config value
 	//       https://docs.aws.amazon.com/sdk-for-go/api/service/kinesis/#GetShardIteratorInput
@@ -98,22 +99,27 @@ func (a AWSKinesis) Fetch(shardID int) error {
 	}
 
 	for {
-		records, err := a.Service.GetRecords(&kinesis.GetRecordsInput{
-			ShardIterator: iter.ShardIterator,
-		})
-		if err != nil {
-			return err
-		}
-
-		for _, rec := range records.Records {
-			if err := a.sendToEventGateway(rec); err != nil {
+		select {
+		case <-ctx.Done():
+			return nil
+		default:
+			records, err := a.Service.GetRecords(&kinesis.GetRecordsInput{
+				ShardIterator: iter.ShardIterator,
+			})
+			if err != nil {
 				return err
 			}
 
-			if isShardClosed(records.NextShardIterator, iter.ShardIterator) {
-				return nil
+			for _, rec := range records.Records {
+				if err := a.sendToEventGateway(rec); err != nil {
+					return err
+				}
+
+				if isShardClosed(records.NextShardIterator, iter.ShardIterator) {
+					return nil
+				}
+				iter.ShardIterator = records.NextShardIterator
 			}
-			iter.ShardIterator = records.NextShardIterator
 		}
 	}
 }
