@@ -1,7 +1,5 @@
 package kafka
 
-import "context"
-
 // Kafka is the configuration struct to leverage when defining a Kafka resource
 // TODO: add tls config portion
 type Kafka struct {
@@ -11,7 +9,7 @@ type Kafka struct {
 }
 
 // Fetch retrieves the next document from the kafka data source
-func (k Kafka) Fetch(ctx context.Context, partID uint) error {
+func (k Kafka) Fetch(partID uint) error {
 	// getrecord here
 	return nil
 }

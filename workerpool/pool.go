@@ -77,6 +77,7 @@ func (pool *WorkerPool) Start() {
 
 // Stop is a blocking function waiting for all jobs (and workers) to stop.
 func (pool *WorkerPool) Stop() {
+	pool.log.Debugf("stopping worker pool jobs...")
 	for _, job := range pool.jobs {
 		job.stop()
 	}
@@ -159,8 +160,12 @@ func (w *worker) run() {
 	w.log.Debugw("kicked off worker", "workerID", w.id)
 	defer w.waitGroup.Done()
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	errChan := make(chan error)
+	go func() {
+		errChan <- w.connection.Source.Fetch(w.id)
+		close(errChan)
+	}()
+
 	for {
 		select {
 		case <-w.done:
@@ -168,7 +173,8 @@ func (w *worker) run() {
 			return
 		default:
 			// perform the actual connection here
-			if err := w.connection.Source.Fetch(); err != nil {
+			w.log.Debugw("would be handling the stuff here", "workerID", w.id, "connectionID", w.connection.ID)
+			if err := w.connection.Source.Fetch(ctx, w.id); err != nil {
 				w.log.Errorw("worker errored", "worker", w.id, "error", err.Error())
 			}
 			return
