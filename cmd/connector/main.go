@@ -52,7 +52,7 @@ func main() {
 	// KV service
 	store := &kv.Store{
 		Client: namespace.NewKV(client, connectionsPrefix),
-		Log:    logger,
+		Log:    logger.Named("Store"),
 	}
 
 	// Watcher
@@ -69,8 +69,9 @@ func main() {
 		logger.Fatalf("unable to create session in etcd. Error: %s", err)
 	}
 	wp := workerpool.New(session, *maxWorkers, events, logger.Named("WorkerPool"))
-	go wp.Start()
+	wp.Start()
 	defer wp.Stop()
+	logger.Debugf("started worker pool")
 
 	// Server
 	srv := httpapi.ConfigAPI(store, *port)
