@@ -1,3 +1,5 @@
+// +build medium
+
 package connection_test
 
 import (
