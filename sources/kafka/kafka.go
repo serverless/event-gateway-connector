@@ -9,9 +9,9 @@ type Kafka struct {
 }
 
 // Fetch retrieves the next document from the kafka data source
-func (k Kafka) Fetch() ([]byte, error) {
+func (k Kafka) Fetch(partID int) error {
 	// getrecord here
-	return nil, nil
+	return nil
 }
 
 // NumberOfWorkers returns number of partitions to handle by the pool

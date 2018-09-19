@@ -3,13 +3,13 @@ package connection
 // Source is the default interface that each connection source (e.g. awskinesis, kafka) need
 // to satisfy in order to deliver events to the EG
 type Source interface {
-	Fetch() ([]byte, error)
+	Fetch(int) error
 	NumberOfWorkers() uint
 }
 
 // SourceLoader is where we define individual service types to return
 type SourceLoader interface {
-	Load(config []byte) (Source, error)
+	Connect(id ID, config []byte) (Source, error)
 }
 
 // SourceType abstraction for the data sources

@@ -39,7 +39,6 @@ func TestUnmarshalJSON(t *testing.T) {
 		Source: &awskinesis.AWSKinesis{
 			StreamName:         "stream_one",
 			Region:             "us-east-1",
-			NumberOfShards:     1,
 			AWSAccessKeyID:     "key_one",
 			AWSSecretAccessKey: "secret_key_one",
 			AWSSessionToken:    "session_token_one",

@@ -157,16 +157,18 @@ func newWorker(id uint, conn *connection.Connection, wg *sync.WaitGroup, log *za
 
 func (w *worker) run() {
 	w.log.Debugw("kicked off worker", "workerID", w.id)
+	defer w.waitGroup.Done()
 	for {
 		select {
 		case <-w.done:
 			w.log.Debugw("trapped done signal", "workerID", w.id)
-			w.waitGroup.Done()
 			return
 		default:
 			// perform the actual connection here
-			w.log.Debugw("would be handling the stuff here", "workerID", w.id, "connectionID", w.connection.ID)
-			time.Sleep(1 * time.Second)
+			if err := w.connection.Source.Fetch(); err != nil {
+				w.log.Errorw("worker errored", "worker", w.id, "error", err.Error())
+			}
+			return
 		}
 	}
 }
