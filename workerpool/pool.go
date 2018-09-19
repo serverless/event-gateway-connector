@@ -21,7 +21,6 @@ type WorkerPool struct {
 	log        *zap.SugaredLogger
 	jobs       map[connection.ID]*job // map of job handlers assigned to each connection.ID
 	events     <-chan *watcher.Event
-	done       chan bool // signal channel to stop all worker processes
 }
 
 // New will accept a few initializer variables in order to stand up the new worker
@@ -74,7 +73,6 @@ type job struct {
 	connection *connection.Connection
 	mutex      *concurrency.Mutex
 	workers    map[uint]*worker
-	done       chan bool // signal channel to stop all worker processes
 	waitGroup  *sync.WaitGroup
 	log        *zap.SugaredLogger
 }
