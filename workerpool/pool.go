@@ -172,7 +172,7 @@ func (w *worker) run() {
 	w.log.Debugw("kicked off worker", "workerID", w.id)
 	defer w.waitGroup.Done()
 
-	var data [][]byte
+	var data = &connection.Records{}
 	var err error
 
 	for {
@@ -181,7 +181,7 @@ func (w *worker) run() {
 			w.log.Debugw("trapped done signal", "workerID", w.id)
 			return
 		default:
-			data, err = w.connection.Source.Fetch(w.id)
+			data, err = w.connection.Source.Fetch(w.id, data.LastSequence)
 			if err != nil {
 				w.log.Errorw("worker failed", "worker", w.id, "error", err.Error())
 				return
@@ -197,9 +197,9 @@ func (w *worker) run() {
 
 // sendToEventGateway takes the provided set of data payload events from a given source
 // and sends them to the specified space at the Event Gateway
-func (w *worker) sendToEventGateway(data [][]byte) error {
-	for id, d := range data {
-		w.log.Debugf("would send message %d to eg: %s\n", id, d)
+func (w *worker) sendToEventGateway(data *connection.Records) error {
+	for id, d := range data.Data {
+		w.log.Debugf("would send message %d to eg: %s", id, d)
 	}
 
 	return nil

@@ -82,32 +82,39 @@ func (a AWSKinesis) validate() error {
 }
 
 // Fetch retrieves the next document from the awskinesis source
-func (a AWSKinesis) Fetch(shardID uint) ([][]byte, error) {
-	ret := [][]byte{}
+// Borrrowed some items from https://github.com/harlow/kinesis-consumer/blob/master/consumer.go#L251
+func (a AWSKinesis) Fetch(shardID uint, lastSeq string) (*connection.Records, error) {
+	ret := &connection.Records{LastSequence: lastSeq}
+	params := &kinesis.GetShardIteratorInput{
+		ShardId:           a.Shards[shardID].ShardId,
+		StreamName:        aws.String(a.StreamName),
+		ShardIteratorType: aws.String("TRIM_HORIZON"),
+	}
+
+	if len(lastSeq) != 0 {
+		params.ShardIteratorType = aws.String("AFTER_SEQUENCE_NUMBER")
+		params.StartingSequenceNumber = aws.String(lastSeq)
+	}
 
 	// set up the shard iterator for our particular shardID
-	// NOTE: may want to make the ShardIteratorType into a config value
-	//       https://docs.aws.amazon.com/sdk-for-go/api/service/kinesis/#GetShardIteratorInput
-	iter, err := a.Service.GetShardIterator(
-		&kinesis.GetShardIteratorInput{
-			ShardId:           a.Shards[shardID].ShardId,
-			ShardIteratorType: aws.String("LATEST"),
-			StreamName:        aws.String(a.StreamName),
-		},
-	)
+	iter, err := a.Service.GetShardIterator(params)
 	if err != nil {
-		return ret, err
+		return nil, err
 	}
 
 	records, err := a.Service.GetRecords(&kinesis.GetRecordsInput{
 		ShardIterator: iter.ShardIterator,
 	})
 	if err != nil {
-		return ret, err
+		return nil, err
 	}
 
 	for _, rec := range records.Records {
-		ret = append(ret, rec.Data)
+		//		if id == 3 {
+		//			break
+		//		}
+		ret.Data = append(ret.Data, rec.Data)
+		ret.LastSequence = *rec.SequenceNumber
 	}
 
 	return ret, nil
