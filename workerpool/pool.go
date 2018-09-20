@@ -79,7 +79,6 @@ func (pool *WorkerPool) Start() {
 
 // Stop is a blocking function waiting for all jobs (and workers) to stop.
 func (pool *WorkerPool) Stop() {
-	pool.log.Debugf("stopping worker pool jobs...")
 	for _, job := range pool.jobs {
 		job.stop()
 	}
