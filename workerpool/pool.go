@@ -188,7 +188,12 @@ func (w *worker) run() {
 
 			err = w.sendToEventGateway(data)
 			if err != nil {
-				w.log.Errorw("sending worker data to eventgateway", "worker", w.id, "error", err.Error())
+				w.log.Errorw("sending worker data to eventgateway",
+					"worker", w.id,
+					"error", err.Error(),
+					"space", w.connection.Space,
+					"target", w.connection.Target,
+				)
 			}
 		}
 	}
@@ -198,7 +203,7 @@ func (w *worker) run() {
 // and sends them to the specified space at the Event Gateway
 func (w *worker) sendToEventGateway(data *connection.Records) error {
 	for id, d := range data.Data {
-		w.log.Debugf("would send message %d to eg: %s", id, d)
+		w.log.Debugf("worker %d would send message %d to eg: %s", w.id, id, d)
 	}
 
 	return nil

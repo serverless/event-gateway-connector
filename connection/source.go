@@ -9,7 +9,7 @@ type Source interface {
 
 // SourceLoader is where we define individual service types to return
 type SourceLoader interface {
-	Load(ID, []byte) (Source, error)
+	Load([]byte) (Source, error)
 }
 
 // SourceType abstraction for the data sources

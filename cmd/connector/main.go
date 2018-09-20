@@ -67,7 +67,7 @@ func main() {
 	wp := workerpool.New(session, *maxWorkers, events, locksPrefix, logger.Named("WorkerPool"))
 	wp.Start()
 	defer wp.Stop()
-	logger.Debugw("started worker pool", "workers", maxWorkers)
+	logger.Debugw("started worker pool", "maxWorkers", maxWorkers)
 
 	// KV service
 	store := &kv.Store{

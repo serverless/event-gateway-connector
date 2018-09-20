@@ -35,7 +35,7 @@ type SourceLoader struct{}
 // Load will decode the provided JSON data into valid AWSKinesis format and establish
 // a connection to the endpoint. Provided the connection is successful, we return an instance
 // of the connection.Source, othewise an error.
-func (s SourceLoader) Load(id connection.ID, data []byte) (connection.Source, error) {
+func (s SourceLoader) Load(data []byte) (connection.Source, error) {
 	var src AWSKinesis
 	err := json.Unmarshal(data, &src)
 	if err != nil {
@@ -110,9 +110,6 @@ func (a AWSKinesis) Fetch(shardID uint, lastSeq string) (*connection.Records, er
 	}
 
 	for _, rec := range records.Records {
-		//		if id == 3 {
-		//			break
-		//		}
 		ret.Data = append(ret.Data, rec.Data)
 		ret.LastSequence = *rec.SequenceNumber
 	}

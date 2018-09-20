@@ -13,6 +13,7 @@ type Connection struct {
 	Space        string           `json:"space"`
 	ID           ID               `json:"connectionId"`
 	Target       string           `json:"target"`
+	EventType    string           `json:"eventType"`
 	SourceType   SourceType       `json:"type"`
 	SourceConfig *json.RawMessage `json:"source"`
 	Source       Source           `json:"-"`
@@ -40,7 +41,7 @@ func (c *Connection) UnmarshalJSON(data []byte) error {
 	c.SourceType = rawConn.SourceType
 
 	if loader, ok := sources[rawConn.SourceType]; ok {
-		src, err := loader.Load(rawConn.ID, *rawConn.SourceConfig)
+		src, err := loader.Load(*rawConn.SourceConfig)
 		if err != nil {
 			return err
 		}
