@@ -32,10 +32,10 @@ func init() {
 // SourceLoader satisfies the connection SourceLoader interface
 type SourceLoader struct{}
 
-// Connect will decode the provided JSON data into valid AWSKinesis format and establish
+// Load will decode the provided JSON data into valid AWSKinesis format and establish
 // a connection to the endpoint. Provided the connection is successful, we return an instance
 // of the connection.Source, othewise an error.
-func (s SourceLoader) Connect(id connection.ID, data []byte) (connection.Source, error) {
+func (s SourceLoader) Load(id connection.ID, data []byte) (connection.Source, error) {
 	var src AWSKinesis
 	err := json.Unmarshal(data, &src)
 	if err != nil {
@@ -82,53 +82,35 @@ func (a AWSKinesis) validate() error {
 }
 
 // Fetch retrieves the next document from the awskinesis source
-func (a AWSKinesis) Fetch(shardID uint) error {
+func (a AWSKinesis) Fetch(shardID uint) ([][]byte, error) {
+	ret := [][]byte{}
+
 	// set up the shard iterator for our particular shardID
 	// NOTE: may want to make the ShardIteratorType into a config value
 	//       https://docs.aws.amazon.com/sdk-for-go/api/service/kinesis/#GetShardIteratorInput
 	iter, err := a.Service.GetShardIterator(
 		&kinesis.GetShardIteratorInput{
 			ShardId:           a.Shards[shardID].ShardId,
-			ShardIteratorType: aws.String("TRIM_HORIZON"),
+			ShardIteratorType: aws.String("LATEST"),
 			StreamName:        aws.String(a.StreamName),
 		},
 	)
 	if err != nil {
-		return err
+		return ret, err
 	}
 
-	for {
-		records, err := a.Service.GetRecords(&kinesis.GetRecordsInput{
-			ShardIterator: iter.ShardIterator,
-		})
-		if err != nil {
-			return err
-		}
-
-		for _, rec := range records.Records {
-			if err := a.sendToEventGateway(rec); err != nil {
-				return err
-			}
-		}
-
-		if isShardClosed(records.NextShardIterator, iter.ShardIterator) {
-			return nil
-		}
-		iter.ShardIterator = records.NextShardIterator
+	records, err := a.Service.GetRecords(&kinesis.GetRecordsInput{
+		ShardIterator: iter.ShardIterator,
+	})
+	if err != nil {
+		return ret, err
 	}
-}
 
-// isShardClosed checks to make sure the next iterator in the record set is not nil, otherwise we're
-// at the end of our record stream.
-// https://github.com/harlow/kinesis-consumer/blob/master/consumer.go#L209
-func isShardClosed(next, curr *string) bool {
-	return next == nil || curr == next
-}
+	for _, rec := range records.Records {
+		ret = append(ret, rec.Data)
+	}
 
-// sendToEventGateway sends the data over to our event gateway
-func (a AWSKinesis) sendToEventGateway(r *kinesis.Record) error {
-	fmt.Printf("this is where we'd forward to the endpoint: %+v\n", r)
-	return nil
+	return ret, nil
 }
 
 // NumberOfWorkers returns number of shards to handle by the pool

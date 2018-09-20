@@ -2,6 +2,8 @@ package workerpool
 
 import (
 	"context"
+	"net"
+	"net/http"
 	"sync"
 	"time"
 
@@ -140,6 +142,7 @@ func (j *job) stop() {
 type worker struct {
 	id         uint
 	connection *connection.Connection
+	gateway    *http.Client
 	done       chan bool
 	waitGroup  *sync.WaitGroup
 	log        *zap.SugaredLogger
@@ -152,6 +155,15 @@ func newWorker(id uint, conn *connection.Connection, wg *sync.WaitGroup, log *za
 		done:       make(chan bool),
 		waitGroup:  wg,
 		log:        log,
+		gateway: &http.Client{
+			Timeout: 2 * time.Second,
+			Transport: &http.Transport{
+				Dial: (&net.Dialer{
+					Timeout: 2 * time.Second,
+				}).Dial,
+				TLSHandshakeTimeout: 2 * time.Second,
+			},
+		},
 	}
 	return w
 }
@@ -160,11 +172,8 @@ func (w *worker) run() {
 	w.log.Debugw("kicked off worker", "workerID", w.id)
 	defer w.waitGroup.Done()
 
-	errChan := make(chan error)
-	go func() {
-		errChan <- w.connection.Source.Fetch(w.id)
-		close(errChan)
-	}()
+	var data [][]byte
+	var err error
 
 	for {
 		select {
@@ -172,12 +181,26 @@ func (w *worker) run() {
 			w.log.Debugw("trapped done signal", "workerID", w.id)
 			return
 		default:
-			// perform the actual connection here
-			w.log.Debugw("would be handling the stuff here", "workerID", w.id, "connectionID", w.connection.ID)
-			if err := w.connection.Source.Fetch(ctx, w.id); err != nil {
-				w.log.Errorw("worker errored", "worker", w.id, "error", err.Error())
+			data, err = w.connection.Source.Fetch(w.id)
+			if err != nil {
+				w.log.Errorw("worker failed", "worker", w.id, "error", err.Error())
+				return
 			}
-			return
+
+			err = w.sendToEventGateway(data)
+			if err != nil {
+				w.log.Errorw("sending worker data to eventgateway", "worker", w.id, "error", err.Error())
+			}
 		}
 	}
+}
+
+// sendToEventGateway takes the provided set of data payload events from a given source
+// and sends them to the specified space at the Event Gateway
+func (w *worker) sendToEventGateway(data [][]byte) error {
+	for id, d := range data {
+		w.log.Debugf("would send message %d to eg: %s\n", id, d)
+	}
+
+	return nil
 }
