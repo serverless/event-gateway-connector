@@ -49,6 +49,7 @@ func (pool *WorkerPool) Start() {
 				switch event.Type {
 				case watcher.Created:
 					if pool.numWorkers+event.Connection.Source.NumberOfWorkers() > pool.maxWorkers {
+						pool.log.Debugw("creating new job skipped, workers limit exceeded", "connectionID", event.ID)
 						continue
 					}
 
