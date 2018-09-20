@@ -3,7 +3,8 @@ package watcher
 import (
 	"context"
 	"encoding/json"
-	"fmt"
+	"strings"
+	"time"
 
 	"github.com/coreos/etcd/mvcc/mvccpb"
 
@@ -17,19 +18,21 @@ import (
 
 // Watcher watches etcd directory and emits events when Connection configuration was added or deleted.
 type Watcher struct {
-	kvClient    etcd.KV
-	watchClient etcd.Watcher
-	stopCh      chan struct{}
-	log         *zap.SugaredLogger
+	kvClient      etcd.KV
+	locksKVClient etcd.KV
+	watchClient   etcd.Watcher
+	stopCh        chan struct{}
+	log           *zap.SugaredLogger
 }
 
 // New creates new Watcher instance
-func New(client *etcd.Client, prefix string, log *zap.SugaredLogger) *Watcher {
+func New(client *etcd.Client, connectionsPrefix, locksPrefix string, log *zap.SugaredLogger) *Watcher {
 	return &Watcher{
-		kvClient:    namespace.NewKV(client.KV, prefix),
-		watchClient: namespace.NewWatcher(client.Watcher, prefix),
-		stopCh:      make(chan struct{}),
-		log:         log,
+		kvClient:      namespace.NewKV(client.KV, connectionsPrefix),
+		locksKVClient: namespace.NewKV(client.KV, locksPrefix),
+		watchClient:   namespace.NewWatcher(client.Watcher, connectionsPrefix),
+		stopCh:        make(chan struct{}),
+		log:           log,
 	}
 }
 
@@ -37,19 +40,25 @@ func New(client *etcd.Client, prefix string, log *zap.SugaredLogger) *Watcher {
 func (w *Watcher) Watch() (<-chan *Event, error) {
 	eventsCh := make(chan *Event)
 
-	existingValues, err := w.list()
-	if err != nil {
-		return nil, fmt.Errorf("listing existing values faield: %s", err)
-	}
+	// perioducally populate channel with events about existing connections without locks
+	go func() {
+		for {
+			existingValues, err := w.list()
+			if err != nil {
+				w.log.Errorf("listing existing values failed: %s", err)
+			}
+
+			for _, existingValue := range existingValues {
+				eventsCh <- existingValue
+			}
+
+			time.Sleep(time.Second * 3)
+		}
+	}()
 
 	go func() {
 		defer w.watchClient.Close()
 		defer close(eventsCh)
-
-		// populate channel with events about existing values
-		for _, existingValue := range existingValues {
-			eventsCh <- existingValue
-		}
 
 		watchCh := w.watchClient.Watch(context.TODO(), "", etcd.WithPrefix())
 		for resp := range watchCh {
@@ -105,23 +114,36 @@ type Event struct {
 
 // list retruns existing key/value pairs as events.
 func (w *Watcher) list() ([]*Event, error) {
-	resp, err := w.kvClient.Get(context.TODO(), "\x00", etcd.WithFromKey())
+	connections, err := w.kvClient.Get(context.TODO(), "\x00", etcd.WithFromKey())
 	if err != nil {
 		return nil, err
 	}
 
+	locks, err := w.locksKVClient.Get(context.TODO(), "\x00", etcd.WithFromKey(), etcd.WithKeysOnly())
+	if err != nil {
+		return nil, err
+	}
+
+	connectionsWithLocks := map[connection.ID]bool{}
+	for _, kv := range locks.Kvs {
+		connectionID := connection.ID(strings.Split(string(kv.Key), "/")[0])
+		connectionsWithLocks[connectionID] = true
+	}
+
 	list := []*Event{}
-	for _, kv := range resp.Kvs {
+	for _, kv := range connections.Kvs {
 		conn := &connection.Connection{}
 		if err := json.Unmarshal(kv.Value, conn); err != nil {
 			return nil, err
 		}
 
-		list = append(list, &Event{
-			Type:       Created,
-			ID:         conn.ID,
-			Connection: conn,
-		})
+		if _, exists := connectionsWithLocks[conn.ID]; !exists {
+			list = append(list, &Event{
+				Type:       Created,
+				ID:         conn.ID,
+				Connection: conn,
+			})
+		}
 	}
 
 	return list, nil

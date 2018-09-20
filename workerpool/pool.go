@@ -15,24 +15,26 @@ import (
 // WorkerPool is the default struct for our worker pool, containing mostly private values
 // including the maximum workers eligible, current count of workers, etc.
 type WorkerPool struct {
-	maxWorkers uint
-	numWorkers uint
-	session    *concurrency.Session
-	log        *zap.SugaredLogger
-	jobs       map[connection.ID]*job // map of job handlers assigned to each connection.ID
-	events     <-chan *watcher.Event
+	maxWorkers  uint
+	numWorkers  uint
+	locksPrefix string
+	session     *concurrency.Session
+	log         *zap.SugaredLogger
+	jobs        map[connection.ID]*job // map of job handlers assigned to each connection.ID
+	events      <-chan *watcher.Event
 }
 
 // New will accept a few initializer variables in order to stand up the new worker
 // pool of goroutines. These workers will listen for *watcher.Events and handle the
 // internal *Connection to manage data.
-func New(session *concurrency.Session, maxWorkers uint, events <-chan *watcher.Event, log *zap.SugaredLogger) *WorkerPool {
+func New(session *concurrency.Session, maxWorkers uint, events <-chan *watcher.Event, locksPrefix string, log *zap.SugaredLogger) *WorkerPool {
 	return &WorkerPool{
-		maxWorkers: maxWorkers,
-		session:    session,
-		log:        log,
-		jobs:       make(map[connection.ID]*job),
-		events:     events,
+		maxWorkers:  maxWorkers,
+		locksPrefix: locksPrefix,
+		session:     session,
+		log:         log,
+		jobs:        make(map[connection.ID]*job),
+		events:      events,
 	}
 }
 
@@ -46,7 +48,12 @@ func (pool *WorkerPool) Start() {
 
 				switch event.Type {
 				case watcher.Created:
-					job, err := newJob(pool.session, event.Connection, pool.log.Named("job"))
+					if pool.numWorkers+event.Connection.Source.NumberOfWorkers() > pool.maxWorkers {
+						pool.log.Debugw("creating new job skipped, workers limit exceeded", "connectionID", event.ID)
+						continue
+					}
+
+					job, err := newJob(pool.session, event.Connection, pool.locksPrefix, pool.log.Named("job"))
 					if err != nil {
 						pool.log.Debugw("creating new job failed", "error", err, "connectionID", event.ID)
 						continue
@@ -77,8 +84,6 @@ func (pool *WorkerPool) Stop() {
 	pool.log.Debugf("all jobs stopped")
 }
 
-const lockPrefix = "serverless-event-gateway-connector/locks/connections/"
-
 // job is the interim struct to manage workers for a give connection.
 type job struct {
 	connection *connection.Connection
@@ -89,8 +94,8 @@ type job struct {
 }
 
 // newJob creates new job an tries to lock the connection in etcd.
-func newJob(session *concurrency.Session, conn *connection.Connection, log *zap.SugaredLogger) (*job, error) {
-	mutex := concurrency.NewMutex(session, lockPrefix+string(conn.ID))
+func newJob(session *concurrency.Session, conn *connection.Connection, locksPrefix string, log *zap.SugaredLogger) (*job, error) {
+	mutex := concurrency.NewMutex(session, locksPrefix+string(conn.ID))
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*2)
 	defer cancel()
@@ -161,7 +166,7 @@ func (w *worker) run() {
 		default:
 			// perform the actual connection here
 			w.log.Debugw("would be handling the stuff here", "workerID", w.id, "connectionID", w.connection.ID)
-			time.Sleep(3 * time.Second)
+			time.Sleep(1 * time.Second)
 		}
 	}
 }

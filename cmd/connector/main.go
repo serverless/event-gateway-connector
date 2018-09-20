@@ -22,7 +22,9 @@ import (
 	_ "github.com/serverless/event-gateway-connector/sources/awskinesis"
 )
 
-const connectionsPrefix = "serverless-event-gateway-connector/connections"
+const prefix = "serverless-event-gateway-connector/"
+const connectionsPrefix = prefix + "connections/"
+const locksPrefix = prefix + "locks/connections/"
 
 var maxWorkers = flag.UintP("workers", "w", 10, "Maximum number of workers for the pool.")
 var port = flag.IntP("port", "p", 4002, "Port to serve configuration API on")
@@ -49,14 +51,8 @@ func main() {
 	}
 	defer client.Close()
 
-	// KV service
-	store := &kv.Store{
-		Client: namespace.NewKV(client, connectionsPrefix),
-		Log:    logger.Named("Store"),
-	}
-
 	// Watcher
-	watch := watcher.New(client, connectionsPrefix, logger.Named("Watcher"))
+	watch := watcher.New(client, connectionsPrefix, locksPrefix, logger.Named("Watcher"))
 	events, err := watch.Watch()
 	if err != nil {
 		logger.Fatalf("unable to watch changes in etcd. Error: %s", err)
@@ -68,10 +64,16 @@ func main() {
 	if err != nil {
 		logger.Fatalf("unable to create session in etcd. Error: %s", err)
 	}
-	wp := workerpool.New(session, *maxWorkers, events, logger.Named("WorkerPool"))
+	wp := workerpool.New(session, *maxWorkers, events, locksPrefix, logger.Named("WorkerPool"))
 	wp.Start()
 	defer wp.Stop()
-	logger.Debugf("started worker pool")
+	logger.Debugw("started worker pool", "workers", maxWorkers)
+
+	// KV service
+	store := &kv.Store{
+		Client: namespace.NewKV(client, connectionsPrefix),
+		Log:    logger.Named("Store"),
+	}
 
 	// Server
 	srv := httpapi.ConfigAPI(store, *port)
