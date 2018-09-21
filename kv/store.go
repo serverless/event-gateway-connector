@@ -43,6 +43,31 @@ func (store Store) CreateConnection(conn *connection.Connection) (*connection.Co
 	return conn, nil
 }
 
+// UpdateConnection udpates connection in etcd.
+func (store Store) UpdateConnection(conn *connection.Connection) (*connection.Connection, error) {
+	value, err := json.Marshal(conn)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := store.Client.Get(context.TODO(), string(conn.ID))
+	if resp.Count == 0 {
+		return nil, ErrKeyNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	_, err = store.Client.Put(context.TODO(), string(conn.ID), string(value))
+	if err != nil {
+		return nil, err
+	}
+
+	store.Log.Debugw("Connection updated.", "space", conn.Space, "connectionId", conn.ID)
+
+	return conn, nil
+}
+
 // DeleteConnection deletes connection from etcd.
 func (store Store) DeleteConnection(space string, id connection.ID) error {
 	resp, err := store.Client.Delete(context.TODO(), string(id))
