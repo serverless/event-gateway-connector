@@ -38,6 +38,7 @@ func (c *Connection) UnmarshalJSON(data []byte) error {
 	c.ID = rawConn.ID
 	c.Space = rawConn.Space
 	c.Target = rawConn.Target
+	c.EventType = rawConn.EventType
 	c.SourceType = rawConn.SourceType
 
 	if loader, ok := sources[rawConn.SourceType]; ok {
@@ -69,6 +70,7 @@ func (c *Connection) MarshalJSON() ([]byte, error) {
 		Space:        c.Space,
 		ID:           c.ID,
 		Target:       c.Target,
+		EventType:    c.EventType,
 		SourceType:   c.SourceType,
 		SourceConfig: &rawConfig,
 	}

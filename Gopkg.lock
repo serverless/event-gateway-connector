@@ -195,12 +195,34 @@
   revision = "418d78d0b9a7b7de3a6bbc8a23def624cc977bb2"
 
 [[projects]]
+  digest = "1:274f67cb6fed9588ea2521ecdac05a6d62a8c51c074c1fccc6a49a40ba80e925"
+  name = "github.com/satori/go.uuid"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "f58768cc1a7a7e77a3bd49e98cdd21419399b6a3"
+  version = "v1.2.0"
+
+[[projects]]
   digest = "1:8a3e7525dc0cf0236b163166800ecbc78d6c8c5d7ac956996e7b3bef8cfadc41"
   name = "github.com/segmentio/ksuid"
   packages = ["."]
   pruneopts = "UT"
   revision = "112f929a3020abfcd06b77c963ec919130796a35"
   version = "1.0.1"
+
+[[projects]]
+  digest = "1:36c2f4e571813834c1d682052de81ef26f803d1b39501eae38b38b010a3de4bd"
+  name = "github.com/serverless/event-gateway"
+  packages = [
+    "event",
+    "function",
+    "internal/http",
+    "internal/zap",
+    "metadata",
+  ]
+  pruneopts = "UT"
+  revision = "cc915adf6abc497ba0b2711e8e03e4e6b5cdf47e"
+  version = "0.9.1"
 
 [[projects]]
   digest = "1:777e729b475d3895c7229552aa10076f0d177daf37c0a72258006d046d329960"
@@ -332,6 +354,7 @@
     "github.com/prometheus/client_golang/prometheus",
     "github.com/prometheus/client_golang/prometheus/promhttp",
     "github.com/segmentio/ksuid",
+    "github.com/serverless/event-gateway/event",
     "go.uber.org/zap",
     "gopkg.in/go-playground/validator.v9",
   ]
