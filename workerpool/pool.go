@@ -182,14 +182,14 @@ func (w *worker) run() {
 		default:
 			data, err = w.connection.Source.Fetch(w.id, data.LastSequence)
 			if err != nil {
-				w.log.Errorw("worker failed", "worker", w.id, "error", err.Error())
+				w.log.Errorw("worker failed", "workerID", w.id, "error", err.Error())
 				return
 			}
 
 			err = w.sendToEventGateway(data)
 			if err != nil {
 				w.log.Errorw("sending worker data to eventgateway",
-					"worker", w.id,
+					"workerID", w.id,
 					"error", err.Error(),
 					"space", w.connection.Space,
 					"target", w.connection.Target,

@@ -14,6 +14,25 @@ Payload:
 ```
 {
 	"target": "http://localhost:4001",
+	"eventType": "user.created",
+	"type": "awskinesis",
+	"source": {
+		"streamName": "test",
+		"region": "us-east-1"
+	}
+}
+```
+
+#### Update Connection
+
+`PUT /v1/spaces/<space name>/connections/<connection ID>`
+
+Payload:
+```
+{
+	"target": "http://localhost:4001",
+	"eventType": "user.created",
+	"type": "awskinesis",
 	"source": {
 		"streamName": "test",
 		"region": "us-east-1"

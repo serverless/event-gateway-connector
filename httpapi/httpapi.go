@@ -16,6 +16,7 @@ type HTTPAPI struct {
 // RegisterRoutes register HTTP API routes
 func (h HTTPAPI) RegisterRoutes(router *httprouter.Router) {
 	router.POST("/v1/spaces/:space/connections", h.createConnection)
+	router.PUT("/v1/spaces/:space/connections/:id", h.updateConnection)
 	router.DELETE("/v1/spaces/:space/connections/:id", h.deleteConnection)
 }
 
@@ -40,6 +41,30 @@ func (h HTTPAPI) createConnection(w http.ResponseWriter, r *http.Request, params
 	}
 
 	w.WriteHeader(http.StatusCreated)
+	encoder.Encode(output)
+}
+
+func (h HTTPAPI) updateConnection(w http.ResponseWriter, r *http.Request, params httprouter.Params) {
+	w.Header().Set("Content-Type", "application/json")
+	encoder := json.NewEncoder(w)
+
+	conn := &connection.Connection{}
+	err := json.NewDecoder(r.Body).Decode(conn)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		encoder.Encode(&Response{Errors: []Error{{Message: err.Error()}}})
+		return
+	}
+
+	conn.Space = params.ByName("space")
+	conn.ID = connection.ID(params.ByName("id"))
+	output, err := h.Connections.UpdateConnection(conn)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		encoder.Encode(&Response{Errors: []Error{{Message: err.Error()}}})
+		return
+	}
+
 	encoder.Encode(output)
 }
 

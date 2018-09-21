@@ -69,10 +69,14 @@ func (w *Watcher) Watch() (<-chan *Event, error) {
 			}
 
 			for _, watchEvent := range resp.Events {
-				event := &Event{ID: connection.ID(string(watchEvent.Kv.Key))}
+				connectionID := connection.ID(string(watchEvent.Kv.Key))
 
-				if watchEvent.Type == mvccpb.PUT {
-					event.Type = Created
+				switch watchEvent.Type {
+				case mvccpb.PUT:
+					if watchEvent.Kv.CreateRevision != watchEvent.Kv.ModRevision {
+						// connection was updated. Emit Delete event first and then Created event.
+						eventsCh <- &Event{Type: Deleted, ID: connectionID}
+					}
 
 					conn := &connection.Connection{}
 					if err := json.Unmarshal(watchEvent.Kv.Value, conn); err != nil {
@@ -80,12 +84,10 @@ func (w *Watcher) Watch() (<-chan *Event, error) {
 						continue
 					}
 
-					event.Connection = conn
-				} else {
-					event.Type = Deleted
+					eventsCh <- &Event{Type: Created, ID: connectionID, Connection: conn}
+				case mvccpb.DELETE:
+					eventsCh <- &Event{Type: Deleted, ID: connectionID}
 				}
-
-				eventsCh <- event
 			}
 		}
 	}()
