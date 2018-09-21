@@ -13,6 +13,7 @@ type Connection struct {
 	Space        string           `json:"space"`
 	ID           ID               `json:"connectionId"`
 	Target       string           `json:"target"`
+	EventType    string           `json:"eventType"`
 	SourceType   SourceType       `json:"type"`
 	SourceConfig *json.RawMessage `json:"source"`
 	Source       Source           `json:"-"`

@@ -19,7 +19,7 @@ type AWSKinesis struct {
 	Service            kinesisiface.KinesisAPI `json:"-" validate:"-"`
 	StreamName         string                  `json:"streamName" validate:"required"`
 	Region             string                  `json:"region" validate:"required"`
-	NumberOfShards     uint                    `json:"numberOfShards" validate:"min=1"`
+	Shards             []*kinesis.Shard        `json:"-"`
 	AWSAccessKeyID     string                  `json:"awsAccessKeyId,omitempty"`
 	AWSSecretAccessKey string                  `json:"awsSecretAccessKey,omitempty"`
 	AWSSessionToken    string                  `json:"awsSessionToken,omitempty"`
@@ -32,7 +32,9 @@ func init() {
 // SourceLoader satisfies the connection SourceLoader interface
 type SourceLoader struct{}
 
-// Load will decode the provided JSON data into valid AWSKinesis format, or error out
+// Load will decode the provided JSON data into valid AWSKinesis format and establish
+// a connection to the endpoint. Provided the connection is successful, we return an instance
+// of the connection.Source, othewise an error.
 func (s SourceLoader) Load(data []byte) (connection.Source, error) {
 	var src AWSKinesis
 	err := json.Unmarshal(data, &src)
@@ -61,6 +63,17 @@ func (s SourceLoader) Load(data []byte) (connection.Source, error) {
 	}
 
 	src.Service = kinesis.New(awsSession)
+
+	stream, err := src.Service.DescribeStream(
+		&kinesis.DescribeStreamInput{
+			StreamName: aws.String(src.StreamName),
+		},
+	)
+	if err != nil {
+		return src, err
+	}
+	src.Shards = stream.StreamDescription.Shards
+
 	return src, nil
 }
 
@@ -69,12 +82,42 @@ func (a AWSKinesis) validate() error {
 }
 
 // Fetch retrieves the next document from the awskinesis source
-func (a AWSKinesis) Fetch() ([]byte, error) {
-	// getrecord here
-	return nil, nil
+// Borrrowed some items from https://github.com/harlow/kinesis-consumer/blob/master/consumer.go#L251
+func (a AWSKinesis) Fetch(shardID uint, lastSeq string) (*connection.Records, error) {
+	ret := &connection.Records{LastSequence: lastSeq}
+	params := &kinesis.GetShardIteratorInput{
+		ShardId:           a.Shards[shardID].ShardId,
+		StreamName:        aws.String(a.StreamName),
+		ShardIteratorType: aws.String("TRIM_HORIZON"),
+	}
+
+	if len(lastSeq) != 0 {
+		params.ShardIteratorType = aws.String("AFTER_SEQUENCE_NUMBER")
+		params.StartingSequenceNumber = aws.String(lastSeq)
+	}
+
+	// set up the shard iterator for our particular shardID
+	iter, err := a.Service.GetShardIterator(params)
+	if err != nil {
+		return nil, err
+	}
+
+	records, err := a.Service.GetRecords(&kinesis.GetRecordsInput{
+		ShardIterator: iter.ShardIterator,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	for _, rec := range records.Records {
+		ret.Data = append(ret.Data, rec.Data)
+		ret.LastSequence = *rec.SequenceNumber
+	}
+
+	return ret, nil
 }
 
 // NumberOfWorkers returns number of shards to handle by the pool
 func (a AWSKinesis) NumberOfWorkers() uint {
-	return a.NumberOfShards
+	return uint(len(a.Shards))
 }

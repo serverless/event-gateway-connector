@@ -2,6 +2,8 @@ package workerpool
 
 import (
 	"context"
+	"net"
+	"net/http"
 	"sync"
 	"time"
 
@@ -139,6 +141,7 @@ func (j *job) stop() {
 type worker struct {
 	id         uint
 	connection *connection.Connection
+	gateway    *http.Client
 	done       chan bool
 	waitGroup  *sync.WaitGroup
 	log        *zap.SugaredLogger
@@ -151,22 +154,57 @@ func newWorker(id uint, conn *connection.Connection, wg *sync.WaitGroup, log *za
 		done:       make(chan bool),
 		waitGroup:  wg,
 		log:        log,
+		gateway: &http.Client{
+			Timeout: 2 * time.Second,
+			Transport: &http.Transport{
+				Dial: (&net.Dialer{
+					Timeout: 2 * time.Second,
+				}).Dial,
+				TLSHandshakeTimeout: 2 * time.Second,
+			},
+		},
 	}
 	return w
 }
 
 func (w *worker) run() {
 	w.log.Debugw("kicked off worker", "workerID", w.id)
+	defer w.waitGroup.Done()
+
+	var data = &connection.Records{}
+	var err error
+
 	for {
 		select {
 		case <-w.done:
 			w.log.Debugw("trapped done signal", "workerID", w.id)
-			w.waitGroup.Done()
 			return
 		default:
-			// perform the actual connection here
-			w.log.Debugw("would be handling the stuff here", "workerID", w.id, "connectionID", w.connection.ID)
-			time.Sleep(1 * time.Second)
+			data, err = w.connection.Source.Fetch(w.id, data.LastSequence)
+			if err != nil {
+				w.log.Errorw("worker failed", "worker", w.id, "error", err.Error())
+				return
+			}
+
+			err = w.sendToEventGateway(data)
+			if err != nil {
+				w.log.Errorw("sending worker data to eventgateway",
+					"worker", w.id,
+					"error", err.Error(),
+					"space", w.connection.Space,
+					"target", w.connection.Target,
+				)
+			}
 		}
 	}
+}
+
+// sendToEventGateway takes the provided set of data payload events from a given source
+// and sends them to the specified space at the Event Gateway
+func (w *worker) sendToEventGateway(data *connection.Records) error {
+	for id, d := range data.Data {
+		w.log.Debugf("worker %d would send message %d to eg: %s", w.id, id, d)
+	}
+
+	return nil
 }
