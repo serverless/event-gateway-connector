@@ -219,11 +219,11 @@ func (w *worker) sendToEventGateway(data *connection.Records) error {
 
 		resp, err := w.eventGateway.Post(w.connection.Target, "application/cloudevents+json", buffer)
 		if err != nil {
-			w.log.Errorw("sending message failed", "error", err, "connectionID", w.connection.ID)
+			w.log.Errorw("sending message failed", "error", err, "workerID", w.id, "connectionID", w.connection.ID)
 		}
 		if resp.StatusCode >= 400 {
 			body, _ := ioutil.ReadAll(resp.Body)
-			w.log.Errorw("event rejected by Event Gateway", "connectionID", w.connection.ID, "statusCode", resp.StatusCode, "body", string(body))
+			w.log.Errorw("event rejected by Event Gateway", "workerID", w.id, "connectionID", w.connection.ID, "statusCode", resp.StatusCode, "body", string(body))
 		}
 
 		w.log.Debugw("message sent to Event Gateway", "workerID", w.id, "connectionID", w.connection.ID)
