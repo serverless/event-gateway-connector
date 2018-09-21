@@ -202,8 +202,11 @@ func (w *worker) run() {
 // sendToEventGateway takes the provided set of data payload events from a given source
 // and sends them to the specified space at the Event Gateway
 func (w *worker) sendToEventGateway(data *connection.Records) error {
-	for id, d := range data.Data {
-		w.log.Debugf("worker %d would send message %d to eg: %s", w.id, id, d)
+	for id, payload := range data.Data {
+		w.log.Debugf("worker %d would send message %d to eg: %s", w.id, id, payload)
+
+		messagesProcessed.WithLabelValues(w.connection.Space, string(w.connection.ID)).Inc()
+		bytesProcessed.WithLabelValues(w.connection.Space, string(w.connection.ID)).Add(float64(len(payload)))
 	}
 
 	return nil

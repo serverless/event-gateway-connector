@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/julienschmidt/httprouter"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/serverless/event-gateway-connector/connection"
 )
 
@@ -15,6 +16,7 @@ type HTTPAPI struct {
 
 // RegisterRoutes register HTTP API routes
 func (h HTTPAPI) RegisterRoutes(router *httprouter.Router) {
+	router.Handler("GET", "/v1/metrics", promhttp.Handler())
 	router.POST("/v1/spaces/:space/connections", h.createConnection)
 	router.DELETE("/v1/spaces/:space/connections/:id", h.deleteConnection)
 }
