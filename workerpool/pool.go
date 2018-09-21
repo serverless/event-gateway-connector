@@ -1,8 +1,10 @@
 package workerpool
 
 import (
+	"bytes"
 	"context"
-	"net"
+	"encoding/json"
+	"io/ioutil"
 	"net/http"
 	"sync"
 	"time"
@@ -11,6 +13,7 @@ import (
 
 	"github.com/serverless/event-gateway-connector/connection"
 	"github.com/serverless/event-gateway-connector/watcher"
+	"github.com/serverless/event-gateway/event"
 	"go.uber.org/zap"
 )
 
@@ -139,12 +142,12 @@ func (j *job) stop() {
 
 // worker is the internal representation of the worker process
 type worker struct {
-	id         uint
-	connection *connection.Connection
-	gateway    *http.Client
-	done       chan bool
-	waitGroup  *sync.WaitGroup
-	log        *zap.SugaredLogger
+	id           uint
+	connection   *connection.Connection
+	eventGateway *http.Client
+	done         chan bool
+	waitGroup    *sync.WaitGroup
+	log          *zap.SugaredLogger
 }
 
 func newWorker(id uint, conn *connection.Connection, wg *sync.WaitGroup, log *zap.SugaredLogger) *worker {
@@ -154,14 +157,8 @@ func newWorker(id uint, conn *connection.Connection, wg *sync.WaitGroup, log *za
 		done:       make(chan bool),
 		waitGroup:  wg,
 		log:        log,
-		gateway: &http.Client{
+		eventGateway: &http.Client{
 			Timeout: 2 * time.Second,
-			Transport: &http.Transport{
-				Dial: (&net.Dialer{
-					Timeout: 2 * time.Second,
-				}).Dial,
-				TLSHandshakeTimeout: 2 * time.Second,
-			},
 		},
 	}
 	return w
@@ -202,8 +199,34 @@ func (w *worker) run() {
 // sendToEventGateway takes the provided set of data payload events from a given source
 // and sends them to the specified space at the Event Gateway
 func (w *worker) sendToEventGateway(data *connection.Records) error {
-	for id, payload := range data.Data {
-		w.log.Debugf("worker %d would send message %d to eg: %s", w.id, id, payload)
+	for _, payload := range data.Data {
+		now := time.Now()
+		cloudEvent := &event.Event{
+			EventType:          event.TypeName(w.connection.EventType),
+			CloudEventsVersion: "0.1",
+			Source:             "/eventgateway/connector",
+			EventID:            "unique",
+			EventTime:          &now,
+			ContentType:        "text/plain",
+			Data:               string(payload),
+		}
+
+		buffer := &bytes.Buffer{}
+		err := json.NewEncoder(buffer).Encode(cloudEvent)
+		if err != nil {
+			return err
+		}
+
+		resp, err := w.eventGateway.Post(w.connection.Target, "application/cloudevents+json", buffer)
+		if err != nil {
+			w.log.Errorw("sending message failed", "error", err, "connectionID", w.connection.ID)
+		}
+		if resp.StatusCode >= 400 {
+			body, _ := ioutil.ReadAll(resp.Body)
+			w.log.Errorw("event rejected by Event Gateway", "connectionID", w.connection.ID, "statusCode", resp.StatusCode, "body", string(body))
+		}
+
+		w.log.Debugw("message sent to Event Gateway", "workerID", w.id, "connectionID", w.connection.ID)
 
 		messagesProcessed.WithLabelValues(w.connection.Space, string(w.connection.ID)).Inc()
 		bytesProcessed.WithLabelValues(w.connection.Space, string(w.connection.ID)).Add(float64(len(payload)))
