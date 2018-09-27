@@ -13,7 +13,6 @@ import (
 	"github.com/coreos/etcd/clientv3/namespace"
 	"github.com/serverless/event-gateway-connector/httpapi"
 	"github.com/serverless/event-gateway-connector/kv"
-	"github.com/serverless/event-gateway-connector/watcher"
 	"github.com/serverless/event-gateway-connector/workerpool"
 	"go.uber.org/zap"
 
@@ -24,7 +23,9 @@ import (
 
 const prefix = "serverless-event-gateway-connector/"
 const connectionsPrefix = prefix + "connections/"
-const locksPrefix = prefix + "locks/connections/"
+const locksPrefix = prefix + "locks/jobs/"
+
+const jobsBucketSize = 5
 
 var maxWorkers = flag.UintP("workers", "w", 10, "Maximum number of workers for the pool.")
 var port = flag.IntP("port", "p", 4002, "Port to serve configuration API on")
@@ -52,7 +53,11 @@ func main() {
 	defer client.Close()
 
 	// Watcher
-	watch := watcher.New(client, connectionsPrefix, locksPrefix, logger.Named("Watcher"))
+	watch := kv.NewWatcher(
+		namespace.NewKV(client, connectionsPrefix),
+		namespace.NewWatcher(client, connectionsPrefix),
+		namespace.NewKV(client, locksPrefix),
+		logger.Named("KV.Watcher"))
 	events, err := watch.Watch()
 	if err != nil {
 		logger.Fatalf("unable to watch changes in etcd. Error: %s", err)
@@ -64,19 +69,23 @@ func main() {
 	if err != nil {
 		logger.Fatalf("unable to create session in etcd. Error: %s", err)
 	}
-	wp := workerpool.New(session, *maxWorkers, events, locksPrefix, logger.Named("WorkerPool"))
+	wp := workerpool.New(&workerpool.Config{
+		MaxWorkers:     *maxWorkers,
+		JobsBucketSize: jobsBucketSize,
+		LocksPrefix:    locksPrefix,
+		Session:        session,
+		Events:         events,
+		Log:            logger.Named("WorkerPool"),
+	})
 	wp.Start()
 	defer wp.Stop()
 	logger.Debugw("started worker pool", "maxWorkers", maxWorkers)
 
-	// KV service
-	store := &kv.Store{
-		Client: namespace.NewKV(client, connectionsPrefix),
-		Log:    logger.Named("Store"),
-	}
+	// KV store service
+	store := kv.NewStore(namespace.NewKV(client, connectionsPrefix), jobsBucketSize, logger.Named("KV.Store"))
 
 	// Server
-	srv := httpapi.ConfigAPI(store, *port)
+	srv := httpapi.NewConfigAPI(store, *port)
 	go func() {
 		logger.Debugf("starting Config API on port: %d", *port)
 		if err := srv.ListenAndServe(); err != nil {

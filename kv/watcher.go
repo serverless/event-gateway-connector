@@ -1,4 +1,4 @@
-package watcher
+package kv
 
 import (
 	"context"
@@ -11,28 +11,26 @@ import (
 	"github.com/serverless/event-gateway-connector/connection"
 	"go.uber.org/zap"
 
-	"github.com/coreos/etcd/clientv3/namespace"
-
 	etcd "github.com/coreos/etcd/clientv3"
 )
 
 // Watcher watches etcd directory and emits events when Connection configuration was added or deleted.
 type Watcher struct {
-	kvClient      etcd.KV
-	locksKVClient etcd.KV
-	watchClient   etcd.Watcher
-	stopCh        chan struct{}
-	log           *zap.SugaredLogger
+	connectionsKVClient etcd.KV
+	jobsWatchClient     etcd.Watcher
+	locksKVClient       etcd.KV
+	stopCh              chan struct{}
+	log                 *zap.SugaredLogger
 }
 
-// New creates new Watcher instance
-func New(client *etcd.Client, connectionsPrefix, locksPrefix string, log *zap.SugaredLogger) *Watcher {
+// NewWatcher creates new Watcher instance
+func NewWatcher(connectionsKVClient etcd.KV, jobsWatcher etcd.Watcher, locksKVClient etcd.KV, log *zap.SugaredLogger) *Watcher {
 	return &Watcher{
-		kvClient:      namespace.NewKV(client.KV, connectionsPrefix),
-		locksKVClient: namespace.NewKV(client.KV, locksPrefix),
-		watchClient:   namespace.NewWatcher(client.Watcher, connectionsPrefix),
-		stopCh:        make(chan struct{}),
-		log:           log,
+		connectionsKVClient: connectionsKVClient,
+		jobsWatchClient:     jobsWatcher,
+		locksKVClient:       locksKVClient,
+		stopCh:              make(chan struct{}),
+		log:                 log,
 	}
 }
 
@@ -56,11 +54,12 @@ func (w *Watcher) Watch() (<-chan *Event, error) {
 		}
 	}()
 
+	// listen for new events
 	go func() {
-		defer w.watchClient.Close()
+		defer w.jobsWatchClient.Close()
 		defer close(eventsCh)
 
-		watchCh := w.watchClient.Watch(context.TODO(), "", etcd.WithPrefix())
+		watchCh := w.jobsWatchClient.Watch(context.TODO(), "", etcd.WithPrefix())
 		for resp := range watchCh {
 			select {
 			case <-w.stopCh:
@@ -69,13 +68,18 @@ func (w *Watcher) Watch() (<-chan *Event, error) {
 			}
 
 			for _, watchEvent := range resp.Events {
-				connectionID := connection.ID(string(watchEvent.Kv.Key))
+				if !strings.Contains(string(watchEvent.Kv.Key), jobsDir) {
+					continue
+				}
+
+				connectionID, jobID := getIDs(string(watchEvent.Kv.Key))
 
 				switch watchEvent.Type {
 				case mvccpb.PUT:
 					if watchEvent.Kv.CreateRevision != watchEvent.Kv.ModRevision {
 						// connection was updated. Emit Delete event first and then Created event.
-						eventsCh <- &Event{Type: Deleted, ID: connectionID}
+						// TODO handle update
+						eventsCh <- &Event{Type: Deleted, ConnectionID: connectionID}
 					}
 
 					conn := &connection.Connection{}
@@ -84,9 +88,9 @@ func (w *Watcher) Watch() (<-chan *Event, error) {
 						continue
 					}
 
-					eventsCh <- &Event{Type: Created, ID: connectionID, Connection: conn}
+					eventsCh <- &Event{Type: Created, ConnectionID: connectionID, Connection: conn, JobID: jobID}
 				case mvccpb.DELETE:
-					eventsCh <- &Event{Type: Deleted, ID: connectionID}
+					eventsCh <- &Event{Type: Deleted, ConnectionID: connectionID, JobID: jobID}
 				}
 			}
 		}
@@ -109,14 +113,15 @@ const (
 
 // Event represents event happened in Connections configuration
 type Event struct {
-	Type       int
-	ID         connection.ID
-	Connection *connection.Connection
+	Type         int
+	ConnectionID connection.ID
+	Connection   *connection.Connection
+	JobID        string
 }
 
 // list retruns existing key/value pairs as events.
 func (w *Watcher) list() ([]*Event, error) {
-	connections, err := w.kvClient.Get(context.TODO(), "\x00", etcd.WithFromKey())
+	connectionsAndJobs, err := w.connectionsKVClient.Get(context.TODO(), "\x00", etcd.WithFromKey())
 	if err != nil {
 		return nil, err
 	}
@@ -126,27 +131,44 @@ func (w *Watcher) list() ([]*Event, error) {
 		return nil, err
 	}
 
-	connectionsWithLocks := map[connection.ID]bool{}
+	jobsWithLocks := map[string]bool{}
 	for _, kv := range locks.Kvs {
-		connectionID := connection.ID(strings.Split(string(kv.Key), "/")[0])
-		connectionsWithLocks[connectionID] = true
+		segs := strings.Split(string(kv.Key), "/")
+		jobID := segs[0] + "/" + segs[1]
+		jobsWithLocks[jobID] = true
+	}
+
+	// filter out connection.Connection values
+	jobs := []*mvccpb.KeyValue{}
+	for _, pair := range connectionsAndJobs.Kvs {
+		if strings.Contains(string(pair.Key), jobsDir) {
+			jobs = append(jobs, pair)
+		}
 	}
 
 	list := []*Event{}
-	for _, kv := range connections.Kvs {
+	for _, kv := range jobs {
 		conn := &connection.Connection{}
 		if err := json.Unmarshal(kv.Value, conn); err != nil {
 			return nil, err
 		}
 
-		if _, exists := connectionsWithLocks[conn.ID]; !exists {
+		_, jobsID := getIDs(string(kv.Key))
+		if _, exists := jobsWithLocks[jobsID]; !exists {
+			_, jobID := getIDs(string(kv.Key))
 			list = append(list, &Event{
-				Type:       Created,
-				ID:         conn.ID,
-				Connection: conn,
+				Type:         Created,
+				JobID:        jobID,
+				ConnectionID: conn.ID,
+				Connection:   conn,
 			})
 		}
 	}
 
 	return list, nil
+}
+
+func getIDs(key string) (connection.ID, string) {
+	ids := strings.Split(key, "/")
+	return connection.ID(ids[0]), ids[0] + "/" + ids[2]
 }

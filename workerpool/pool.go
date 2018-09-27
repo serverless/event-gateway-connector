@@ -5,41 +5,58 @@ import (
 	"context"
 	"encoding/json"
 	"io/ioutil"
+	"math"
 	"net/http"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/coreos/etcd/clientv3/concurrency"
 
 	"github.com/serverless/event-gateway-connector/connection"
-	"github.com/serverless/event-gateway-connector/watcher"
+	"github.com/serverless/event-gateway-connector/kv"
 	"github.com/serverless/event-gateway/event"
 	"go.uber.org/zap"
 )
 
+const jobBucketSize = 5
+
 // WorkerPool is the default struct for our worker pool, containing mostly private values
 // including the maximum workers eligible, current count of workers, etc.
 type WorkerPool struct {
-	maxWorkers  uint
-	numWorkers  uint
-	locksPrefix string
-	session     *concurrency.Session
-	log         *zap.SugaredLogger
-	jobs        map[connection.ID]*job // map of job handlers assigned to each connection.ID
-	events      <-chan *watcher.Event
+	maxWorkers     uint
+	numWorkers     uint
+	jobsBucketSize uint
+	locksPrefix    string
+	session        *concurrency.Session
+	events         <-chan *kv.Event
+	jobs           map[connection.ID]*job // map of job handlers assigned to each connection.ID
+	log            *zap.SugaredLogger
+}
+
+// Config is a struct containing configuration for the worker pool.
+type Config struct {
+	MaxWorkers     uint
+	JobsBucketSize uint
+	LocksPrefix    string
+	Session        *concurrency.Session
+	Events         <-chan *kv.Event
+	Log            *zap.SugaredLogger
 }
 
 // New will accept a few initializer variables in order to stand up the new worker
-// pool of goroutines. These workers will listen for *watcher.Events and handle the
+// pool of goroutines. These workers will listen for *kv.Events and handle the
 // internal *Connection to manage data.
-func New(session *concurrency.Session, maxWorkers uint, events <-chan *watcher.Event, locksPrefix string, log *zap.SugaredLogger) *WorkerPool {
+func New(config *Config) *WorkerPool {
 	return &WorkerPool{
-		maxWorkers:  maxWorkers,
-		locksPrefix: locksPrefix,
-		session:     session,
-		log:         log,
-		jobs:        make(map[connection.ID]*job),
-		events:      events,
+		maxWorkers:     config.MaxWorkers,
+		jobsBucketSize: config.JobsBucketSize,
+		locksPrefix:    config.LocksPrefix,
+		session:        config.Session,
+		events:         config.Events,
+		jobs:           make(map[connection.ID]*job),
+		log:            config.Log,
 	}
 }
 
@@ -49,29 +66,29 @@ func (pool *WorkerPool) Start() {
 		for {
 			event, more := <-pool.events
 			if more {
-				pool.log.Debugw("event received", "connectionID", event.ID, "type", event.Type)
+				pool.log.Debugw("event received", "jobID", event.JobID, "type", event.Type)
 
 				switch event.Type {
-				case watcher.Created:
-					if pool.numWorkers+event.Connection.Source.NumberOfWorkers() > pool.maxWorkers {
-						pool.log.Debugw("creating new job skipped, workers limit exceeded", "connectionID", event.ID)
+				case kv.Created:
+					if pool.numWorkers+pool.jobsBucketSize > pool.maxWorkers {
+						pool.log.Debugw("creating new job skipped, workers limit exceeded", "jobID", event.JobID)
 						continue
 					}
 
-					job, err := newJob(pool.session, event.Connection, pool.locksPrefix, pool.log.Named("job"))
+					job, err := newJob(pool.session, event.JobID, event.Connection, pool.locksPrefix, pool.log.Named("job"))
 					if err != nil {
-						pool.log.Debugw("creating new job failed", "error", err, "connectionID", event.ID)
+						pool.log.Debugw("creating new job failed", "error", err, "jobID", event.JobID)
 						continue
 					}
 
 					job.start()
 
-					pool.jobs[event.ID] = job
+					pool.jobs[event.ConnectionID] = job
 					pool.numWorkers += event.Connection.Source.NumberOfWorkers()
-				case watcher.Deleted:
-					if job, exists := pool.jobs[event.ID]; exists {
+				case kv.Deleted:
+					if job, exists := pool.jobs[event.ConnectionID]; exists {
 						job.stop()
-						delete(pool.jobs, event.ID)
+						delete(pool.jobs, event.ConnectionID)
 						pool.numWorkers -= job.connection.Source.NumberOfWorkers()
 					}
 				}
@@ -91,6 +108,8 @@ func (pool *WorkerPool) Stop() {
 
 // job is the interim struct to manage workers for a give connection.
 type job struct {
+	ID         string
+	offset     int
 	connection *connection.Connection
 	mutex      *concurrency.Mutex
 	workers    map[uint]*worker
@@ -99,17 +118,21 @@ type job struct {
 }
 
 // newJob creates new job an tries to lock the connection in etcd.
-func newJob(session *concurrency.Session, conn *connection.Connection, locksPrefix string, log *zap.SugaredLogger) (*job, error) {
-	mutex := concurrency.NewMutex(session, locksPrefix+string(conn.ID))
+func newJob(session *concurrency.Session, id string, conn *connection.Connection, locksPrefix string, log *zap.SugaredLogger) (*job, error) {
+	mutex := concurrency.NewMutex(session, locksPrefix+string(id))
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*2)
 	defer cancel()
 	if err := mutex.Lock(ctx); err != nil {
 		return nil, err
 	}
-	log.Debugw("lock acquired", "connectionID", conn.ID)
+	log.Debugw("lock acquired", "jobID", id)
+
+	offset, _ := strconv.Atoi(strings.Split(id, "/")[1])
 
 	return &job{
+		ID:         id,
+		offset:     offset,
 		connection: conn,
 		mutex:      mutex,
 		workers:    make(map[uint]*worker),
@@ -119,7 +142,10 @@ func newJob(session *concurrency.Session, conn *connection.Connection, locksPref
 }
 
 func (j *job) start() {
-	for id := uint(0); id < j.connection.Source.NumberOfWorkers(); id++ {
+	currentOffsetMax := (j.offset + 1) * jobBucketSize
+	upper := uint(math.Min(float64(currentOffsetMax), float64(j.connection.Source.NumberOfWorkers())))
+
+	for id := uint(j.offset * jobBucketSize); id < upper; id++ {
 		worker := newWorker(id, j.connection, j.waitGroup, j.log.Named("worker"))
 		go worker.run()
 
@@ -135,7 +161,7 @@ func (j *job) stop() {
 	j.waitGroup.Wait()
 
 	if err := j.mutex.Unlock(context.TODO()); err != nil {
-		j.log.Errorw("unable to unlock connection", "error", err, "connectionID", j.connection.ID)
+		j.log.Errorw("unable to unlock connection", "error", err, "jobID", j.ID)
 	}
 	j.log.Debugw("lock released", "connectionID", j.connection.ID)
 }
