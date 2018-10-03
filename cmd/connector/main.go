@@ -20,6 +20,7 @@ import (
 	flag "github.com/ogier/pflag"
 
 	_ "github.com/serverless/event-gateway-connector/sources/awskinesis"
+	_ "github.com/serverless/event-gateway-connector/sources/awscloudtrail"
 )
 
 const prefix = "serverless-event-gateway-connector/"
