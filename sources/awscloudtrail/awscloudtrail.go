@@ -72,7 +72,7 @@ func (a AWSCloudTrail) validate() error {
 
 // Fetch retrieves the next event from the awscloudtrail source
 func (a AWSCloudTrail) Fetch(shardID uint, lastSeq string) (*connection.Records, error) {
-    var start time.Time
+	var start time.Time
 	ret := &connection.Records{}
 	maxResults := int64(50)
 	params := &cloudtrail.LookupEventsInput{
@@ -80,15 +80,15 @@ func (a AWSCloudTrail) Fetch(shardID uint, lastSeq string) (*connection.Records,
 	}
 
 	if len(lastSeq) != 0 {
-	    start, err := time.Parse(time.RFC3339, lastSeq)
-	    if err != nil {
-	        return nil, err
-	    }
-	    params.StartTime = &start
+		start, err := time.Parse(time.RFC3339, lastSeq)
+		if err != nil {
+			return nil, err
+		}
+		params.StartTime = &start
 	} else {
-	    // If we don't have a start time, we'll go with a day ago.
-	    start := time.Now().AddDate(0, 0, -1)
-	    params.StartTime = &start
+		// If we don't have a start time, we'll go with a day ago.
+		start := time.Now().AddDate(0, 0, -1)
+		params.StartTime = &start
 	}
 
 	resp, err := a.Service.LookupEvents(params)
@@ -96,12 +96,11 @@ func (a AWSCloudTrail) Fetch(shardID uint, lastSeq string) (*connection.Records,
 		return nil, err
 	}
 
-
 	for _, event := range resp.Events {
 		ret.Data = append(ret.Data, []byte(*event.CloudTrailEvent))
 		if event.EventTime.After(start) {
-		    start = event.EventTime.Add(1 * time.Second)
-		    ret.LastSequence = start.Format(time.RFC3339)
+			start = event.EventTime.Add(1 * time.Second)
+			ret.LastSequence = start.Format(time.RFC3339)
 		}
 	}
 
