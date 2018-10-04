@@ -89,7 +89,7 @@ func (pool *WorkerPool) Start() {
 	}()
 }
 
-// Stop stops the worker pool. It's a blocking function waiting for all jobs (and workers) to gracefully shutdown.
+// Stop the worker pool. It's a blocking function waiting for all jobs (and workers) to gracefully shutdown.
 func (pool *WorkerPool) Stop() {
 	for _, job := range pool.jobs {
 		job.stop()
