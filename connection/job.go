@@ -35,4 +35,5 @@ type Job struct {
 	Connection      *Connection `json:"connection"`
 	BucketSize      uint        `json:"bucketSize"`
 	NumberOfWorkers uint        `json:"numberOfWorkers"`
+	// TODO we should also store Shard IDs handled by this Job. To have single source of truth about connection (shards) -> jobs mapping.
 }
