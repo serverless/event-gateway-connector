@@ -70,12 +70,11 @@ func main() {
 		logger.Fatalf("unable to create session in etcd. Error: %s", err)
 	}
 	wp := workerpool.New(&workerpool.Config{
-		MaxWorkers:     *maxWorkers,
-		JobsBucketSize: jobsBucketSize,
-		LocksPrefix:    locksPrefix,
-		Session:        session,
-		Events:         events,
-		Log:            logger.Named("WorkerPool"),
+		MaxWorkers:  *maxWorkers,
+		LocksPrefix: locksPrefix,
+		Session:     session,
+		Events:      events,
+		Log:         logger.Named("WorkerPool"),
 	})
 	wp.Start()
 	defer wp.Stop()

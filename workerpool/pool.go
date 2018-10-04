@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"io/ioutil"
-	"math"
 	"net/http"
 	"sync"
 	"time"
@@ -134,10 +133,7 @@ func newJob(session *concurrency.Session, config *connection.Job, locksPrefix st
 }
 
 func (j *job) start() {
-	currentOffsetMax := (j.id.JobNumber() + 1) * j.bucketSize
-	upper := uint(math.Min(float64(currentOffsetMax), float64(j.connection.Source.NumberOfWorkers())))
-
-	for id := uint(j.id.JobNumber() * j.bucketSize); id < upper; id++ {
+	for id := uint(j.id.JobNumber() * j.bucketSize); id < j.numWorkers; id++ {
 		worker := newWorker(id, j.connection, j.waitGroup, j.log.Named("worker"))
 		go worker.run()
 
