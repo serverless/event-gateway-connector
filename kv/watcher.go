@@ -14,7 +14,7 @@ import (
 	etcd "github.com/coreos/etcd/clientv3"
 )
 
-// Watcher watches etcd directory and emits events when Connection configuration was added or deleted.
+// Watcher watches etcd directory and emits events when Job configuration was added, changed or deleted.
 type Watcher struct {
 	connectionsKVClient etcd.KV
 	jobsWatchClient     etcd.Watcher
@@ -23,7 +23,7 @@ type Watcher struct {
 	log                 *zap.SugaredLogger
 }
 
-// NewWatcher creates new Watcher instance
+// NewWatcher creates a new Watcher instance.
 func NewWatcher(connectionsKVClient etcd.KV, jobsWatcher etcd.Watcher, locksKVClient etcd.KV, log *zap.SugaredLogger) *Watcher {
 	return &Watcher{
 		connectionsKVClient: connectionsKVClient,

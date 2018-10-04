@@ -18,8 +18,9 @@ import (
 	"go.uber.org/zap"
 )
 
-// WorkerPool is the default struct for our worker pool, containing mostly private values
-// including the maximum workers eligible, current count of workers, etc.
+// WorkerPool is a pool of workers grouped into jobs. Each Connection is split into one or more jobs
+// (configured by connection.Job struct). Each job runs one or more workers. Each worker processes
+// one shard/partition from the connection. Worker pool run jobs based on kv.Event channel.
 type WorkerPool struct {
 	maxWorkers     uint
 	numWorkers     uint
@@ -31,7 +32,7 @@ type WorkerPool struct {
 	log            *zap.SugaredLogger
 }
 
-// Config is a struct containing configuration for the worker pool.
+// Config is a configuration of the worker pool.
 type Config struct {
 	MaxWorkers     uint
 	JobsBucketSize uint
@@ -41,9 +42,7 @@ type Config struct {
 	Log            *zap.SugaredLogger
 }
 
-// New will accept a few initializer variables in order to stand up the new worker
-// pool of goroutines. These workers will listen for *kv.Events and handle the
-// internal *Connection to manage data.
+// New creates and configures new worker pool. Worker pool has to be explicitly started with Start() method.
 func New(config *Config) *WorkerPool {
 	return &WorkerPool{
 		maxWorkers:     config.MaxWorkers,
@@ -56,7 +55,7 @@ func New(config *Config) *WorkerPool {
 	}
 }
 
-// Start listens on events channel and tries to start a job for every connection.
+// Start listens on kv.Event channel, tries to create an lock, and start a job.
 func (pool *WorkerPool) Start() {
 	go func() {
 		for {
@@ -93,7 +92,7 @@ func (pool *WorkerPool) Start() {
 	}()
 }
 
-// Stop is a blocking function waiting for all jobs (and workers) to stop.
+// Stop stops the worker pool. It's a blocking function waiting for all jobs (and workers) to gracefully shutdown.
 func (pool *WorkerPool) Stop() {
 	for _, job := range pool.jobs {
 		job.stop()
@@ -102,7 +101,7 @@ func (pool *WorkerPool) Stop() {
 	pool.log.Debugf("all jobs stopped")
 }
 
-// job is the interim struct to manage workers for a give connection.
+// job is a group of worker handling part of connection's shards.
 type job struct {
 	id         connection.JobID
 	bucketSize uint
@@ -114,7 +113,7 @@ type job struct {
 	log        *zap.SugaredLogger
 }
 
-// newJob creates new job an tries to lock the connection in etcd.
+// newJob creates a lock in etcd and returns created job.
 func newJob(session *concurrency.Session, config *connection.Job, locksPrefix string, log *zap.SugaredLogger) (*job, error) {
 	mutex := concurrency.NewMutex(session, locksPrefix+string(config.ID))
 
@@ -138,10 +137,10 @@ func newJob(session *concurrency.Session, config *connection.Job, locksPrefix st
 }
 
 func (j *job) start() {
-	currentOffsetMax := (j.id.WorkerID() + 1) * j.bucketSize
+	currentOffsetMax := (j.id.JobNumber() + 1) * j.bucketSize
 	upper := uint(math.Min(float64(currentOffsetMax), float64(j.connection.Source.NumberOfWorkers())))
 
-	for id := uint(j.id.WorkerID() * j.bucketSize); id < upper; id++ {
+	for id := uint(j.id.JobNumber() * j.bucketSize); id < upper; id++ {
 		worker := newWorker(id, j.connection, j.waitGroup, j.log.Named("worker"))
 		go worker.run()
 
