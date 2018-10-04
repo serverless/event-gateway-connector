@@ -132,8 +132,8 @@ func (w *Watcher) list() ([]*Event, error) {
 
 	jobsWithLocks := map[connection.JobID]bool{}
 	for _, kv := range locks.Kvs {
-
-		jobID := connection.JobID(string(kv.Key))
+		segs := strings.Split(string(kv.Key), "/") // extract job ID from lock key (format <job ID>/<lock ID>)
+		jobID := connection.JobID(segs[0])
 		jobsWithLocks[jobID] = true
 	}
 
