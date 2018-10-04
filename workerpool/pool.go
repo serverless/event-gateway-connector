@@ -52,7 +52,7 @@ func New(config *Config) *WorkerPool {
 	}
 }
 
-// Start listens on kv.Event channel, tries to create an lock, and start a job.
+// Start listens on kv.Event channel, tries to create a lock, and start a job.
 func (pool *WorkerPool) Start() {
 	go func() {
 		for {
