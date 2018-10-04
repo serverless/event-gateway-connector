@@ -72,25 +72,25 @@ func (w *Watcher) Watch() (<-chan *Event, error) {
 					continue
 				}
 
-				connectionID, jobID := getIDs(string(watchEvent.Kv.Key))
+				jobID := connection.JobID(string(watchEvent.Kv.Key))
 
 				switch watchEvent.Type {
 				case mvccpb.PUT:
 					if watchEvent.Kv.CreateRevision != watchEvent.Kv.ModRevision {
 						// connection was updated. Emit Delete event first and then Created event.
 						// TODO handle update
-						eventsCh <- &Event{Type: Deleted, ConnectionID: connectionID}
+						eventsCh <- &Event{Type: Deleted, JobID: jobID}
 					}
 
-					conn := &connection.Connection{}
-					if err := json.Unmarshal(watchEvent.Kv.Value, conn); err != nil {
-						w.log.Errorf("unmarshaling payload failed: %s", err)
+					job := &connection.Job{}
+					if err := json.Unmarshal(watchEvent.Kv.Value, job); err != nil {
+						w.log.Errorw("unmarshaling payload failed", "err", err)
 						continue
 					}
 
-					eventsCh <- &Event{Type: Created, ConnectionID: connectionID, Connection: conn, JobID: jobID}
+					eventsCh <- &Event{Type: Created, JobID: jobID, Job: job}
 				case mvccpb.DELETE:
-					eventsCh <- &Event{Type: Deleted, ConnectionID: connectionID, JobID: jobID}
+					eventsCh <- &Event{Type: Deleted, JobID: jobID}
 				}
 			}
 		}
@@ -113,10 +113,9 @@ const (
 
 // Event represents event happened in Connections configuration
 type Event struct {
-	Type         int
-	ConnectionID connection.ID
-	Connection   *connection.Connection
-	JobID        string
+	Type  int
+	JobID connection.JobID
+	Job   *connection.Job
 }
 
 // list retruns existing key/value pairs as events.
@@ -131,10 +130,10 @@ func (w *Watcher) list() ([]*Event, error) {
 		return nil, err
 	}
 
-	jobsWithLocks := map[string]bool{}
+	jobsWithLocks := map[connection.JobID]bool{}
 	for _, kv := range locks.Kvs {
-		segs := strings.Split(string(kv.Key), "/")
-		jobID := segs[0] + "/" + segs[1]
+
+		jobID := connection.JobID(string(kv.Key))
 		jobsWithLocks[jobID] = true
 	}
 
@@ -148,27 +147,19 @@ func (w *Watcher) list() ([]*Event, error) {
 
 	list := []*Event{}
 	for _, kv := range jobs {
-		conn := &connection.Connection{}
-		if err := json.Unmarshal(kv.Value, conn); err != nil {
+		job := &connection.Job{}
+		if err := json.Unmarshal(kv.Value, job); err != nil {
 			return nil, err
 		}
 
-		_, jobsID := getIDs(string(kv.Key))
-		if _, exists := jobsWithLocks[jobsID]; !exists {
-			_, jobID := getIDs(string(kv.Key))
+		if _, exists := jobsWithLocks[job.ID]; !exists {
 			list = append(list, &Event{
-				Type:         Created,
-				JobID:        jobID,
-				ConnectionID: conn.ID,
-				Connection:   conn,
+				Type:  Created,
+				JobID: job.ID,
+				Job:   job,
 			})
 		}
 	}
 
 	return list, nil
-}
-
-func getIDs(key string) (connection.ID, string) {
-	ids := strings.Split(key, "/")
-	return connection.ID(ids[0]), ids[0] + "/" + ids[2]
 }

@@ -46,7 +46,10 @@ func (store Store) CreateConnection(conn *connection.Connection) (*connection.Co
 	}
 
 	createConnection := etcd.OpPut(string(conn.ID), string(value))
-	createJobs := store.createJobs(conn, string(value))
+	createJobs, err := store.createJobs(conn)
+	if err != nil {
+		return nil, err
+	}
 	ops := append(createJobs, createConnection)
 	_, err = store.client.Txn(context.TODO()).Then(ops...).Commit()
 	if err != nil {
@@ -109,15 +112,28 @@ func (store Store) DeleteConnection(space string, id connection.ID) error {
 	return nil
 }
 
-func (store Store) createJobs(conn *connection.Connection, value string) []etcd.Op {
+func (store Store) createJobs(conn *connection.Connection) ([]etcd.Op, error) {
 	ops := []etcd.Op{}
 
-	buckets := int(math.Ceil(float64(conn.Source.NumberOfWorkers()) / float64(store.jobsBucketSize)))
-	for i := 0; i < buckets; i++ {
-		ops = append(ops, etcd.OpPut(fmt.Sprintf("%s/%s%d", conn.ID, jobsDir, i), value))
+	numWorkersLeft := conn.Source.NumberOfWorkers()
+	numBuckets := int(math.Ceil(float64(conn.Source.NumberOfWorkers()) / float64(store.jobsBucketSize)))
+	for i := 0; i < numBuckets; i++ {
+		job := &connection.Job{
+			ID:              connection.NewJobID(conn.ID, uint(i)),
+			Connection:      conn,
+			BucketSize:      store.jobsBucketSize,
+			NumberOfWorkers: uint(math.Min(float64(store.jobsBucketSize), float64(numWorkersLeft))),
+		}
+		numWorkersLeft -= job.NumberOfWorkers
+		value, err := json.Marshal(job)
+		if err != nil {
+			return []etcd.Op{}, err
+		}
+
+		ops = append(ops, etcd.OpPut(fmt.Sprintf("%s/%s%s", conn.ID, jobsDir, job.ID), string(value)))
 	}
 
-	return ops
+	return ops, nil
 }
 
 func (store Store) deleteJobs(id connection.ID) etcd.Op {
