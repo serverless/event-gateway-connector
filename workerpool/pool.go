@@ -22,36 +22,33 @@ import (
 // (configured by connection.Job struct). Each job runs one or more workers. Each worker processes
 // one shard/partition from the connection. Worker pool run jobs based on kv.Event channel.
 type WorkerPool struct {
-	maxWorkers     uint
-	numWorkers     uint
-	jobsBucketSize uint
-	locksPrefix    string
-	session        *concurrency.Session
-	events         <-chan *kv.Event
-	jobs           map[connection.JobID]*job // map of job handlers assigned to each connection.ID
-	log            *zap.SugaredLogger
+	maxWorkers  uint
+	numWorkers  uint
+	locksPrefix string
+	session     *concurrency.Session
+	events      <-chan *kv.Event
+	jobs        map[connection.JobID]*job // map of job handlers assigned to each connection.ID
+	log         *zap.SugaredLogger
 }
 
 // Config is a configuration of the worker pool.
 type Config struct {
-	MaxWorkers     uint
-	JobsBucketSize uint
-	LocksPrefix    string
-	Session        *concurrency.Session
-	Events         <-chan *kv.Event
-	Log            *zap.SugaredLogger
+	MaxWorkers  uint
+	LocksPrefix string
+	Session     *concurrency.Session
+	Events      <-chan *kv.Event
+	Log         *zap.SugaredLogger
 }
 
 // New creates and configures new worker pool. Worker pool has to be explicitly started with Start() method.
 func New(config *Config) *WorkerPool {
 	return &WorkerPool{
-		maxWorkers:     config.MaxWorkers,
-		jobsBucketSize: config.JobsBucketSize,
-		locksPrefix:    config.LocksPrefix,
-		session:        config.Session,
-		events:         config.Events,
-		jobs:           make(map[connection.JobID]*job),
-		log:            config.Log,
+		maxWorkers:  config.MaxWorkers,
+		locksPrefix: config.LocksPrefix,
+		session:     config.Session,
+		events:      config.Events,
+		jobs:        make(map[connection.JobID]*job),
+		log:         config.Log,
 	}
 }
 
