@@ -19,7 +19,6 @@ type Watcher struct {
 	connectionsKVClient etcd.KV
 	jobsWatchClient     etcd.Watcher
 	locksKVClient       etcd.KV
-	checkpointKVClient  etcd.KV
 	stopCh              chan struct{}
 	log                 *zap.SugaredLogger
 }
