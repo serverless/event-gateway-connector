@@ -12,67 +12,78 @@ import (
 	"github.com/coreos/etcd/clientv3/concurrency"
 
 	"github.com/serverless/event-gateway-connector/connection"
-	"github.com/serverless/event-gateway-connector/watcher"
+	"github.com/serverless/event-gateway-connector/kv"
 	"github.com/serverless/event-gateway/event"
 	"go.uber.org/zap"
 )
 
-// WorkerPool is the default struct for our worker pool, containing mostly private values
-// including the maximum workers eligible, current count of workers, etc.
+// WorkerPool is a pool of workers grouped into jobs. Each Connection is split into one or more jobs
+// (configured by connection.Job struct). Each job runs one or more workers. Each worker processes
+// one shard/partition from the connection. Worker pool run jobs based on kv.Event channel.
 type WorkerPool struct {
 	maxWorkers  uint
 	numWorkers  uint
 	locksPrefix string
 	session     *concurrency.Session
+	events      <-chan *kv.Event
+	jobs        map[connection.JobID]*job // map of job handlers assigned to each connection.ID
+	jobsMutex   sync.RWMutex
 	log         *zap.SugaredLogger
-	jobs        map[connection.ID]*job // map of job handlers assigned to each connection.ID
-	events      <-chan *watcher.Event
 }
 
-// New will accept a few initializer variables in order to stand up the new worker
-// pool of goroutines. These workers will listen for *watcher.Events and handle the
-// internal *Connection to manage data.
-func New(session *concurrency.Session, maxWorkers uint, events <-chan *watcher.Event, locksPrefix string, log *zap.SugaredLogger) *WorkerPool {
+// Config is a configuration of the worker pool.
+type Config struct {
+	MaxWorkers  uint
+	LocksPrefix string
+	Session     *concurrency.Session
+	Events      <-chan *kv.Event
+	Log         *zap.SugaredLogger
+}
+
+// New creates and configures new worker pool. Worker pool has to be explicitly started with Start() method.
+func New(config *Config) *WorkerPool {
 	return &WorkerPool{
-		maxWorkers:  maxWorkers,
-		locksPrefix: locksPrefix,
-		session:     session,
-		log:         log,
-		jobs:        make(map[connection.ID]*job),
-		events:      events,
+		maxWorkers:  config.MaxWorkers,
+		locksPrefix: config.LocksPrefix,
+		session:     config.Session,
+		events:      config.Events,
+		jobs:        make(map[connection.JobID]*job),
+		log:         config.Log,
 	}
 }
 
-// Start listens on events channel and tries to start a job for every connection.
+// Start listens on kv.Event channel, tries to create a lock, and start a job.
 func (pool *WorkerPool) Start() {
 	go func() {
 		for {
 			event, more := <-pool.events
 			if more {
-				pool.log.Debugw("event received", "connectionID", event.ID, "type", event.Type)
+				pool.log.Debugw("event received", "jobID", event.JobID, "type", event.Type)
 
 				switch event.Type {
-				case watcher.Created:
-					if pool.numWorkers+event.Connection.Source.NumberOfWorkers() > pool.maxWorkers {
-						pool.log.Debugw("creating new job skipped, workers limit exceeded", "connectionID", event.ID)
+				case kv.Created:
+					if pool.numWorkers+event.Job.NumberOfWorkers > pool.maxWorkers {
+						pool.log.Debugw("creating new job skipped, workers limit exceeded", "jobID", event.JobID)
 						continue
 					}
 
-					job, err := newJob(pool.session, event.Connection, pool.locksPrefix, pool.log.Named("job"))
+					job, err := newJob(pool.session, event.Job, pool.locksPrefix, pool.log.Named("job"))
 					if err != nil {
-						pool.log.Debugw("creating new job failed", "error", err, "connectionID", event.ID)
+						pool.log.Debugw("creating new job failed", "error", err, "jobID", event.JobID)
 						continue
 					}
 
 					job.start()
 
-					pool.jobs[event.ID] = job
-					pool.numWorkers += event.Connection.Source.NumberOfWorkers()
-				case watcher.Deleted:
-					if job, exists := pool.jobs[event.ID]; exists {
+					pool.jobsMutex.Lock()
+					pool.jobs[event.JobID] = job
+					pool.jobsMutex.Unlock()
+					pool.numWorkers += event.Job.NumberOfWorkers
+				case kv.Deleted:
+					if job, exists := pool.jobs[event.JobID]; exists {
 						job.stop()
-						delete(pool.jobs, event.ID)
-						pool.numWorkers -= job.connection.Source.NumberOfWorkers()
+						delete(pool.jobs, event.JobID)
+						pool.numWorkers -= job.numWorkers
 					}
 				}
 			}
@@ -80,17 +91,22 @@ func (pool *WorkerPool) Start() {
 	}()
 }
 
-// Stop is a blocking function waiting for all jobs (and workers) to stop.
+// Stop the worker pool. It's a blocking function waiting for all jobs (and workers) to gracefully shutdown.
 func (pool *WorkerPool) Stop() {
+	pool.jobsMutex.RLock()
 	for _, job := range pool.jobs {
 		job.stop()
 	}
+	pool.jobsMutex.RUnlock()
 
 	pool.log.Debugf("all jobs stopped")
 }
 
-// job is the interim struct to manage workers for a give connection.
+// job is a group of worker handling part of connection's shards.
 type job struct {
+	id         connection.JobID
+	bucketSize uint
+	numWorkers uint
 	connection *connection.Connection
 	mutex      *concurrency.Mutex
 	workers    map[uint]*worker
@@ -98,19 +114,22 @@ type job struct {
 	log        *zap.SugaredLogger
 }
 
-// newJob creates new job an tries to lock the connection in etcd.
-func newJob(session *concurrency.Session, conn *connection.Connection, locksPrefix string, log *zap.SugaredLogger) (*job, error) {
-	mutex := concurrency.NewMutex(session, locksPrefix+string(conn.ID))
+// newJob creates a lock in etcd and returns created job.
+func newJob(session *concurrency.Session, config *connection.Job, locksPrefix string, log *zap.SugaredLogger) (*job, error) {
+	mutex := concurrency.NewMutex(session, locksPrefix+string(config.ID))
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*2)
 	defer cancel()
 	if err := mutex.Lock(ctx); err != nil {
 		return nil, err
 	}
-	log.Debugw("lock acquired", "connectionID", conn.ID)
+	log.Debugw("lock acquired", "jobID", config.ID)
 
 	return &job{
-		connection: conn,
+		id:         config.ID,
+		bucketSize: config.BucketSize,
+		numWorkers: config.NumberOfWorkers,
+		connection: config.Connection,
 		mutex:      mutex,
 		workers:    make(map[uint]*worker),
 		waitGroup:  &sync.WaitGroup{},
@@ -119,7 +138,8 @@ func newJob(session *concurrency.Session, conn *connection.Connection, locksPref
 }
 
 func (j *job) start() {
-	for id := uint(0); id < j.connection.Source.NumberOfWorkers(); id++ {
+	for i := uint(0); i < j.numWorkers; i++ {
+		id := uint(j.id.JobNumber()*j.bucketSize) + i
 		worker := newWorker(id, j.connection, j.waitGroup, j.log.Named("worker"))
 		go worker.run()
 
@@ -135,9 +155,9 @@ func (j *job) stop() {
 	j.waitGroup.Wait()
 
 	if err := j.mutex.Unlock(context.TODO()); err != nil {
-		j.log.Errorw("unable to unlock connection", "error", err, "connectionID", j.connection.ID)
+		j.log.Errorw("unable to unlock connection", "error", err, "jobID", j.id)
 	}
-	j.log.Debugw("lock released", "connectionID", j.connection.ID)
+	j.log.Debugw("lock released", "jobID", j.id)
 }
 
 // worker is the internal representation of the worker process

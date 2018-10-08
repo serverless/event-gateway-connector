@@ -72,7 +72,7 @@ func (s SourceLoader) Load(data []byte) (connection.Source, error) {
 	if err != nil {
 		return src, err
 	}
-	src.Shards = stream.StreamDescription.Shards
+	src.Shards = stream.StreamDescription.Shards // TODO we need to sort this slice here, otherwise different instances can have different shard on the same position
 
 	return src, nil
 }
