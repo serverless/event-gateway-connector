@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -26,11 +27,13 @@ import (
 const prefix = "serverless-event-gateway-connector/"
 const connectionsPrefix = prefix + "connections/"
 const locksPrefix = prefix + "locks/jobs/"
+const checkpointPrefix = prefix + "workers/"
 
 const jobsBucketSize = 5
 
 var maxWorkers = flag.UintP("workers", "w", 10, "Maximum number of workers for the pool.")
 var port = flag.IntP("port", "p", 4002, "Port to serve configuration API on")
+var etcdClient = flag.StringP("etcd-hosts", "e", "localhost:2379", "Comma-delimited list of hosts in etcd cluster.")
 
 func main() {
 	flag.Parse()
@@ -46,7 +49,7 @@ func main() {
 
 	// etcd client
 	client, err := etcd.New(etcd.Config{
-		Endpoints:   []string{"localhost:2379"},
+		Endpoints:   strings.Split(*etcdClient, ","),
 		DialTimeout: 2 * time.Second,
 	})
 	if err != nil {
@@ -59,7 +62,8 @@ func main() {
 		namespace.NewKV(client, connectionsPrefix),
 		namespace.NewWatcher(client, connectionsPrefix),
 		namespace.NewKV(client, locksPrefix),
-		logger.Named("KV.Watcher"))
+		logger.Named("KV.Watcher"),
+	)
 	events, err := watch.Watch()
 	if err != nil {
 		logger.Fatalf("unable to watch changes in etcd. Error: %s", err)
@@ -72,11 +76,12 @@ func main() {
 		logger.Fatalf("unable to create session in etcd. Error: %s", err)
 	}
 	wp := workerpool.New(&workerpool.Config{
-		MaxWorkers:  *maxWorkers,
-		LocksPrefix: locksPrefix,
-		Session:     session,
-		Events:      events,
-		Log:         logger.Named("WorkerPool"),
+		MaxWorkers:   *maxWorkers,
+		LocksPrefix:  locksPrefix,
+		CheckpointKV: namespace.NewKV(client, checkpointPrefix),
+		Session:      session,
+		Events:       events,
+		Log:          logger.Named("WorkerPool"),
 	})
 	wp.Start()
 	defer wp.Stop()

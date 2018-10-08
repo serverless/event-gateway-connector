@@ -3,6 +3,7 @@ package awskinesis
 import (
 	"encoding/json"
 	"fmt"
+	"sort"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
@@ -69,7 +70,10 @@ func Load(data []byte) (connection.Source, error) {
 	if err != nil {
 		return src, err
 	}
-	src.shards = stream.StreamDescription.Shards // TODO we need to sort this slice here, otherwise different instances can have different shard on the same position
+	sort.Slice(stream.StreamDescription.Shards, func(i, j int) bool {
+		return *stream.StreamDescription.Shards[i].ShardId < *stream.StreamDescription.Shards[j].ShardId
+	})
+	src.shards = stream.StreamDescription.Shards
 
 	return src, nil
 }

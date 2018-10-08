@@ -32,6 +32,31 @@ func NewStore(client etcd.KV, jobsBucketSize uint, log *zap.SugaredLogger) *Stor
 	}
 }
 
+// CreateCheckpoint initalizes a new checkpoint for a specific workerID
+func (store Store) CreateCheckpoint(key string) error {
+	_, err := store.client.Txn(context.TODO()).Then(etcd.OpPut(key+"/", "")).Commit()
+	return err
+}
+
+// RetrieveCheckpoint returns the existing checkpoint for a given workerID, or an error if not found
+func (store Store) RetrieveCheckpoint(key string) (string, error) {
+	checkpoint, err := store.client.Get(context.TODO(), key+"/", etcd.WithPrefix())
+	if checkpoint.Count == 0 {
+		return "", ErrKeyNotFound
+	}
+	if err != nil {
+		return "", err
+	}
+
+	return string(checkpoint.Kvs[0].Value), nil
+}
+
+// UpdateCheckpoint updates the current checkpoint information for a given workerID
+func (store Store) UpdateCheckpoint(key, value string) error {
+	_, err := store.client.Txn(context.TODO()).Then(etcd.OpPut(key, value)).Commit()
+	return err
+}
+
 // CreateConnection creates connection in etcd.
 func (store Store) CreateConnection(conn *connection.Connection) (*connection.Connection, error) {
 	id, err := ksuid.NewRandom()

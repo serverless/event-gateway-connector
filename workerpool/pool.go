@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io/ioutil"
 	"net/http"
 	"sync"
 	"time"
 
+	etcd "github.com/coreos/etcd/clientv3"
 	"github.com/coreos/etcd/clientv3/concurrency"
 
 	"github.com/serverless/event-gateway-connector/connection"
@@ -21,34 +23,37 @@ import (
 // (configured by connection.Job struct). Each job runs one or more workers. Each worker processes
 // one shard/partition from the connection. Worker pool run jobs based on kv.Event channel.
 type WorkerPool struct {
-	maxWorkers  uint
-	numWorkers  uint
-	locksPrefix string
-	session     *concurrency.Session
-	events      <-chan *kv.Event
-	jobs        map[connection.JobID]*job // map of job handlers assigned to each connection.ID
-	jobsMutex   sync.RWMutex
-	log         *zap.SugaredLogger
+	maxWorkers   uint
+	numWorkers   uint
+	locksPrefix  string
+	checkpointKV *kv.Store
+	session      *concurrency.Session
+	events       <-chan *kv.Event
+	jobs         map[connection.JobID]*job // map of job handlers assigned to each connection.ID
+	jobsMutex    sync.RWMutex
+	log          *zap.SugaredLogger
 }
 
 // Config is a configuration of the worker pool.
 type Config struct {
-	MaxWorkers  uint
-	LocksPrefix string
-	Session     *concurrency.Session
-	Events      <-chan *kv.Event
-	Log         *zap.SugaredLogger
+	MaxWorkers   uint
+	LocksPrefix  string
+	CheckpointKV etcd.KV
+	Session      *concurrency.Session
+	Events       <-chan *kv.Event
+	Log          *zap.SugaredLogger
 }
 
 // New creates and configures new worker pool. Worker pool has to be explicitly started with Start() method.
 func New(config *Config) *WorkerPool {
 	return &WorkerPool{
-		maxWorkers:  config.MaxWorkers,
-		locksPrefix: config.LocksPrefix,
-		session:     config.Session,
-		events:      config.Events,
-		jobs:        make(map[connection.JobID]*job),
-		log:         config.Log,
+		maxWorkers:   config.MaxWorkers,
+		locksPrefix:  config.LocksPrefix,
+		checkpointKV: kv.NewStore(config.CheckpointKV, 1, config.Log),
+		session:      config.Session,
+		events:       config.Events,
+		jobs:         make(map[connection.JobID]*job),
+		log:          config.Log,
 	}
 }
 
@@ -73,7 +78,7 @@ func (pool *WorkerPool) Start() {
 						continue
 					}
 
-					job, err := newJob(pool.session, event.Job, pool.locksPrefix, pool.log.Named("job"))
+					job, err := newJob(pool.session, event.Job, pool.locksPrefix, pool.checkpointKV, pool.log.Named("job"))
 					if err != nil {
 						pool.log.Debugw("creating new job failed", "error", err, "jobID", event.JobID)
 						continue
@@ -110,18 +115,19 @@ func (pool *WorkerPool) Stop() {
 
 // job is a group of worker handling part of connection's shards.
 type job struct {
-	id         connection.JobID
-	bucketSize uint
-	numWorkers uint
-	connection *connection.Connection
-	mutex      *concurrency.Mutex
-	workers    map[uint]*worker
-	waitGroup  *sync.WaitGroup
-	log        *zap.SugaredLogger
+	id           connection.JobID
+	bucketSize   uint
+	numWorkers   uint
+	checkpointKV *kv.Store
+	connection   *connection.Connection
+	mutex        *concurrency.Mutex
+	workers      map[uint]*worker
+	waitGroup    *sync.WaitGroup
+	log          *zap.SugaredLogger
 }
 
 // newJob creates a lock in etcd and returns created job.
-func newJob(session *concurrency.Session, config *connection.Job, locksPrefix string, log *zap.SugaredLogger) (*job, error) {
+func newJob(session *concurrency.Session, config *connection.Job, locksPrefix string, checkpointKV *kv.Store, log *zap.SugaredLogger) (*job, error) {
 	mutex := concurrency.NewMutex(session, locksPrefix+string(config.ID))
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*2)
@@ -132,21 +138,22 @@ func newJob(session *concurrency.Session, config *connection.Job, locksPrefix st
 	log.Debugw("lock acquired", "jobID", config.ID)
 
 	return &job{
-		id:         config.ID,
-		bucketSize: config.BucketSize,
-		numWorkers: config.NumberOfWorkers,
-		connection: config.Connection,
-		mutex:      mutex,
-		workers:    make(map[uint]*worker),
-		waitGroup:  &sync.WaitGroup{},
-		log:        log,
+		id:           config.ID,
+		bucketSize:   config.BucketSize,
+		numWorkers:   config.NumberOfWorkers,
+		connection:   config.Connection,
+		checkpointKV: checkpointKV,
+		mutex:        mutex,
+		workers:      make(map[uint]*worker),
+		waitGroup:    &sync.WaitGroup{},
+		log:          log,
 	}, nil
 }
 
 func (j *job) start() {
 	for i := uint(0); i < j.numWorkers; i++ {
 		id := uint(j.id.JobNumber()*j.bucketSize) + i
-		worker := newWorker(id, *j.connection, j.waitGroup, j.log.Named("worker"))
+		worker := newWorker(id, string(j.id), *j.connection, j.waitGroup, j.checkpointKV, j.log.Named("worker"))
 		go worker.run()
 
 		j.workers[id] = worker
@@ -169,6 +176,8 @@ func (j *job) stop() {
 // worker is the internal representation of the worker process
 type worker struct {
 	id           uint
+	checkpointID string
+	checkpointKV *kv.Store
 	connection   connection.Connection
 	eventGateway *http.Client
 	done         chan bool
@@ -176,13 +185,15 @@ type worker struct {
 	log          *zap.SugaredLogger
 }
 
-func newWorker(id uint, conn connection.Connection, wg *sync.WaitGroup, log *zap.SugaredLogger) *worker {
+func newWorker(id uint, jobID string, conn connection.Connection, wg *sync.WaitGroup, checkpointKV *kv.Store, log *zap.SugaredLogger) *worker {
 	w := &worker{
-		id:         id,
-		connection: conn,
-		done:       make(chan bool),
-		waitGroup:  wg,
-		log:        log,
+		id:           id,
+		checkpointID: fmt.Sprintf("%s_%d", jobID, id),
+		checkpointKV: checkpointKV,
+		connection:   conn,
+		done:         make(chan bool),
+		waitGroup:    wg,
+		log:          log,
 		eventGateway: &http.Client{
 			Timeout: 2 * time.Second,
 		},
@@ -197,6 +208,7 @@ func (w *worker) run() {
 
 	var data = &connection.Records{}
 	var err error
+	var checkpoint string
 
 	for {
 		select {
@@ -207,10 +219,24 @@ func (w *worker) run() {
 			}
 			return
 		default:
+			checkpoint, err = w.checkpointKV.RetrieveCheckpoint(w.checkpointID)
+			if err != nil {
+				w.log.Debugw("worker checkpoint retrieve failed", "workerID", w.id, "error", err.Error())
+				w.log.Debugw("creating new checkpoint", "workerID", w.id, "checkpointID", w.checkpointID)
+				if err := w.checkpointKV.CreateCheckpoint(w.checkpointID); err != nil {
+					w.log.Debugw("failed to create workerID checkpoint", "workerID", w.id, "checkpointID", w.checkpointID, "error", err.Error())
+					return
+				}
+			}
+			fmt.Printf("%d: checkpointID: %s, checkpoint: %s, lastSeq is: %s\n", w.id, w.checkpointID, checkpoint, data.LastSequence)
 			data, err = w.connection.Source.Fetch(w.id, data.LastSequence)
 			if err != nil {
 				w.log.Errorw("worker failed", "workerID", w.id, "error", err.Error())
 				return
+			}
+			if len(data.Data) == 0 {
+				w.log.Debugw("no data", "workerID", w.id, "data", data)
+				continue
 			}
 
 			err = w.sendToEventGateway(data)
@@ -222,6 +248,12 @@ func (w *worker) run() {
 					"target", w.connection.Target,
 				)
 			}
+
+			if err := w.checkpointKV.UpdateCheckpoint(w.checkpointID, data.LastSequence); err != nil {
+				w.log.Errorw("worker checkpoint update failed", "workerID", w.id, "checkpointID", w.checkpointID, "checkpoint", data.LastSequence, "error", err.Error())
+				return
+			}
+			fmt.Printf("updated checkpoint with %s\n", data.LastSequence)
 		}
 	}
 }
