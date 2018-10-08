@@ -228,14 +228,12 @@ func (w *worker) run() {
 					return
 				}
 			}
-			fmt.Printf("%d: checkpointID: %s, checkpoint: %s, lastSeq is: %s\n", w.id, w.checkpointID, checkpoint, data.LastSequence)
-			data, err = w.connection.Source.Fetch(w.id, data.LastSequence)
+			data, err = w.connection.Source.Fetch(w.id, checkpoint)
 			if err != nil {
 				w.log.Errorw("worker failed", "workerID", w.id, "error", err.Error())
 				return
 			}
 			if len(data.Data) == 0 {
-				w.log.Debugw("no data", "workerID", w.id, "data", data)
 				continue
 			}
 
@@ -253,7 +251,6 @@ func (w *worker) run() {
 				w.log.Errorw("worker checkpoint update failed", "workerID", w.id, "checkpointID", w.checkpointID, "checkpoint", data.LastSequence, "error", err.Error())
 				return
 			}
-			fmt.Printf("updated checkpoint with %s\n", data.LastSequence)
 		}
 	}
 }
