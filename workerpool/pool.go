@@ -27,6 +27,7 @@ type WorkerPool struct {
 	session     *concurrency.Session
 	events      <-chan *kv.Event
 	jobs        map[connection.JobID]*job // map of job handlers assigned to each connection.ID
+	jobsMutex   sync.RWMutex
 	log         *zap.SugaredLogger
 }
 
@@ -74,7 +75,9 @@ func (pool *WorkerPool) Start() {
 
 					job.start()
 
+					pool.jobsMutex.Lock()
 					pool.jobs[event.JobID] = job
+					pool.jobsMutex.Unlock()
 					pool.numWorkers += event.Job.NumberOfWorkers
 				case kv.Deleted:
 					if job, exists := pool.jobs[event.JobID]; exists {
@@ -90,9 +93,11 @@ func (pool *WorkerPool) Start() {
 
 // Stop the worker pool. It's a blocking function waiting for all jobs (and workers) to gracefully shutdown.
 func (pool *WorkerPool) Stop() {
+	pool.jobsMutex.RLock()
 	for _, job := range pool.jobs {
 		job.stop()
 	}
+	pool.jobsMutex.RUnlock()
 
 	pool.log.Debugf("all jobs stopped")
 }
@@ -133,7 +138,8 @@ func newJob(session *concurrency.Session, config *connection.Job, locksPrefix st
 }
 
 func (j *job) start() {
-	for id := uint(j.id.JobNumber() * j.bucketSize); id < j.numWorkers; id++ {
+	for i := uint(0); i < j.numWorkers; i++ {
+		id := uint(j.id.JobNumber()*j.bucketSize) + i
 		worker := newWorker(id, j.connection, j.waitGroup, j.log.Named("worker"))
 		go worker.run()
 

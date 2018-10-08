@@ -72,7 +72,7 @@ func (w *Watcher) Watch() (<-chan *Event, error) {
 					continue
 				}
 
-				jobID := connection.JobID(string(watchEvent.Kv.Key))
+				jobID := connection.JobID(strings.Split(string(watchEvent.Kv.Key), "/")[2])
 
 				switch watchEvent.Type {
 				case mvccpb.PUT:

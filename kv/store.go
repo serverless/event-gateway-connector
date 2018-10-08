@@ -46,7 +46,7 @@ func (store Store) CreateConnection(conn *connection.Connection) (*connection.Co
 	}
 
 	createConnection := etcd.OpPut(string(conn.ID), string(value))
-	createJobs, err := store.createJobs(conn)
+	createJobs, err := store.createJobsOps(conn)
 	if err != nil {
 		return nil, err
 	}
@@ -63,32 +63,44 @@ func (store Store) CreateConnection(conn *connection.Connection) (*connection.Co
 
 // UpdateConnection udpates connection in etcd.
 func (store Store) UpdateConnection(conn *connection.Connection) (*connection.Connection, error) {
-	_, err := json.Marshal(conn)
+	connectionValue, err := json.Marshal(conn)
 	if err != nil {
 		return nil, err
 	}
 
-	getResp, err := store.client.Get(context.TODO(), string(conn.ID))
-	if getResp.Count == 0 {
+	existingPairs, err := store.client.Get(context.TODO(), string(conn.ID)+"/", etcd.WithPrefix())
+	if existingPairs.Count == 0 {
 		return nil, ErrKeyNotFound
 	}
 	if err != nil {
 		return nil, err
 	}
 
-	// TODO it doesn't work
-	// ops := []etcd.Op{}
-	// ops = append(ops, store.deleteJobs(conn.ID))
-	// ops = append(ops, etcd.OpPut(store.ConnectionsPrefix+string(conn.ID), string(value)))
-	// ops = append(ops, store.createJobs(conn)...)
-	// _, err = store.Client.
-	// 	Txn(context.TODO()).
-	// 	If(etcd.Compare(etcd.ModRevision(store.ConnectionsPrefix+string(conn.ID)), "=", getResp.Kvs[0].ModRevision)).
-	// 	Then(ops...).
-	// 	Commit()
-	// if err != nil {
-	// 	return nil, err
-	// }
+	ops := []etcd.Op{}
+	// update existing connection
+	ops = append(ops, etcd.OpPut(string(conn.ID), string(connectionValue)))
+	// update existing jobs. We cannot just delete all jobs and create new ones because etcd transactions
+	// doesn't allow deleting and created same key in one transaction
+	createJobs, err := store.createJobsOps(conn)
+	if err != nil {
+		return nil, err
+	}
+	ops = append(ops, createJobs...)
+	// delete remaining jobs from the store
+	if len(createJobs) < len(existingPairs.Kvs) {
+		for i := len(existingPairs.Kvs) - 1; i < len(existingPairs.Kvs); i++ {
+			ops = append(ops, etcd.OpDelete(string(existingPairs.Kvs[i].Key)))
+		}
+	}
+
+	_, err = store.client.
+		Txn(context.TODO()).
+		If(etcd.Compare(etcd.ModRevision(string(conn.ID)), "=", existingPairs.Kvs[0].ModRevision)).
+		Then(ops...).
+		Commit()
+	if err != nil {
+		return nil, err
+	}
 
 	store.log.Debugw("Connection updated.", "space", conn.Space, "connectionId", conn.ID)
 
@@ -98,7 +110,7 @@ func (store Store) UpdateConnection(conn *connection.Connection) (*connection.Co
 // DeleteConnection deletes connection from etcd.
 func (store Store) DeleteConnection(space string, id connection.ID) error {
 	deleteConnection := etcd.OpDelete(string(id))
-	deleteJobs := store.deleteJobs(id)
+	deleteJobs := etcd.OpDelete(fmt.Sprintf("%s/%s", id, jobsDir), etcd.WithPrefix())
 	resp, err := store.client.Txn(context.TODO()).Then(deleteConnection, deleteJobs).Commit()
 	if resp.Responses[0].GetResponseDeleteRange().Deleted == 0 {
 		return ErrKeyNotFound
@@ -112,7 +124,7 @@ func (store Store) DeleteConnection(space string, id connection.ID) error {
 	return nil
 }
 
-func (store Store) createJobs(conn *connection.Connection) ([]etcd.Op, error) {
+func (store Store) createJobsOps(conn *connection.Connection) ([]etcd.Op, error) {
 	ops := []etcd.Op{}
 
 	numWorkersLeft := conn.Source.NumberOfWorkers()
@@ -134,10 +146,6 @@ func (store Store) createJobs(conn *connection.Connection) ([]etcd.Op, error) {
 	}
 
 	return ops, nil
-}
-
-func (store Store) deleteJobs(id connection.ID) etcd.Op {
-	return etcd.OpDelete(fmt.Sprintf("%s/%s", id, jobsDir), etcd.WithPrefix())
 }
 
 // ErrKeyNotFound is thrown when the key is not found in the store during a Get operation
