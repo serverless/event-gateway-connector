@@ -10,39 +10,36 @@ import (
 	"github.com/aws/aws-sdk-go/service/kinesis"
 	"github.com/aws/aws-sdk-go/service/kinesis/kinesisiface"
 	"github.com/serverless/event-gateway-connector/connection"
-
 	validator "gopkg.in/go-playground/validator.v9"
 )
 
 // AWSKinesis is a configuration used to configure AWS Kinesis stream as a source.
 type AWSKinesis struct {
-	Service            kinesisiface.KinesisAPI `json:"-" validate:"-"`
-	StreamName         string                  `json:"streamName" validate:"required"`
-	Region             string                  `json:"region" validate:"required"`
-	Shards             []*kinesis.Shard        `json:"-"`
-	AWSAccessKeyID     string                  `json:"awsAccessKeyId,omitempty"`
-	AWSSecretAccessKey string                  `json:"awsSecretAccessKey,omitempty"`
-	AWSSessionToken    string                  `json:"awsSessionToken,omitempty"`
+	StreamName         string `json:"streamName" validate:"required"`
+	Region             string `json:"region" validate:"required"`
+	AWSAccessKeyID     string `json:"awsAccessKeyId,omitempty"`
+	AWSSecretAccessKey string `json:"awsSecretAccessKey,omitempty"`
+	AWSSessionToken    string `json:"awsSessionToken,omitempty"`
+
+	shards  []*kinesis.Shard
+	service kinesisiface.KinesisAPI `validate:"-"`
 }
 
 func init() {
-	connection.RegisterSource(connection.SourceType("awskinesis"), SourceLoader{})
+	connection.RegisterSource(connection.SourceType("awskinesis"), Load)
 }
-
-// SourceLoader satisfies the connection SourceLoader interface
-type SourceLoader struct{}
 
 // Load will decode the provided JSON data into valid AWSKinesis format and establish
 // a connection to the endpoint. Provided the connection is successful, we return an instance
 // of the connection.Source, othewise an error.
-func (s SourceLoader) Load(data []byte) (connection.Source, error) {
+func Load(data []byte) (connection.Source, error) {
 	var src AWSKinesis
 	err := json.Unmarshal(data, &src)
 	if err != nil {
 		return nil, fmt.Errorf("unable to load awskinesis source config: %s", err.Error())
 	}
 
-	if err := src.validate(); err != nil {
+	if err := validator.New().Struct(src); err != nil {
 		return nil, fmt.Errorf("missing required fields for awskinesis source: %s", err.Error())
 	}
 
@@ -62,9 +59,9 @@ func (s SourceLoader) Load(data []byte) (connection.Source, error) {
 		return nil, fmt.Errorf("unable to create awskinesis service session: %s", err.Error())
 	}
 
-	src.Service = kinesis.New(awsSession)
+	src.service = kinesis.New(awsSession)
 
-	stream, err := src.Service.DescribeStream(
+	stream, err := src.service.DescribeStream(
 		&kinesis.DescribeStreamInput{
 			StreamName: aws.String(src.StreamName),
 		},
@@ -72,13 +69,9 @@ func (s SourceLoader) Load(data []byte) (connection.Source, error) {
 	if err != nil {
 		return src, err
 	}
-	src.Shards = stream.StreamDescription.Shards // TODO we need to sort this slice here, otherwise different instances can have different shard on the same position
+	src.shards = stream.StreamDescription.Shards // TODO we need to sort this slice here, otherwise different instances can have different shard on the same position
 
 	return src, nil
-}
-
-func (a AWSKinesis) validate() error {
-	return validator.New().Struct(a)
 }
 
 // Fetch retrieves the next document from the awskinesis source
@@ -86,7 +79,7 @@ func (a AWSKinesis) validate() error {
 func (a AWSKinesis) Fetch(shardID uint, lastSeq string) (*connection.Records, error) {
 	ret := &connection.Records{LastSequence: lastSeq}
 	params := &kinesis.GetShardIteratorInput{
-		ShardId:           a.Shards[shardID].ShardId,
+		ShardId:           a.shards[shardID].ShardId,
 		StreamName:        aws.String(a.StreamName),
 		ShardIteratorType: aws.String("TRIM_HORIZON"),
 	}
@@ -97,12 +90,12 @@ func (a AWSKinesis) Fetch(shardID uint, lastSeq string) (*connection.Records, er
 	}
 
 	// set up the shard iterator for our particular shardID
-	iter, err := a.Service.GetShardIterator(params)
+	iter, err := a.service.GetShardIterator(params)
 	if err != nil {
 		return nil, err
 	}
 
-	records, err := a.Service.GetRecords(&kinesis.GetRecordsInput{
+	records, err := a.service.GetRecords(&kinesis.GetRecordsInput{
 		ShardIterator: iter.ShardIterator,
 	})
 	if err != nil {
@@ -119,5 +112,10 @@ func (a AWSKinesis) Fetch(shardID uint, lastSeq string) (*connection.Records, er
 
 // NumberOfWorkers returns number of shards to handle by the pool
 func (a AWSKinesis) NumberOfWorkers() uint {
-	return uint(len(a.Shards))
+	return uint(len(a.shards))
+}
+
+// Close no-op.
+func (a AWSKinesis) Close() error {
+	return nil
 }

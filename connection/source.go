@@ -1,26 +1,25 @@
 package connection
 
 // Source is the default interface that each connection source (e.g. awskinesis, kafka) need
-// to satisfy in order to deliver events to the EG
+// to satisfy in order to deliver events to the EG.
 type Source interface {
 	Fetch(uint, string) (*Records, error)
 	NumberOfWorkers() uint
-}
-
-// SourceLoader is where we define individual service types to return
-type SourceLoader interface {
-	Load([]byte) (Source, error)
+	Close() error
 }
 
 // SourceType abstraction for the data sources
 type SourceType string
 
-var sources = make(map[SourceType]SourceLoader)
+// SourceLoader takes JSON blob as an input and returns configured Source instance
+type SourceLoader func([]byte) (Source, error)
 
-// RegisterSource ...
+// RegisterSource registers SourceLoader function for specific source type.
 func RegisterSource(source SourceType, loader SourceLoader) {
 	sources[source] = loader
 }
+
+var sources = make(map[SourceType]SourceLoader)
 
 // Records is the default data structure to return message payloads
 // from the registered source. There are two fields:
