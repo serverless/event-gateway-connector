@@ -15,7 +15,8 @@ import (
 )
 
 const jobsDir = "jobs/"
-const workersDir = "workers/"
+
+//const workersDir = "workers/"
 
 // Store implements connection.Service using etcd KV as a backend.
 type Store struct {
@@ -35,6 +36,7 @@ func NewStore(client etcd.KV, jobsBucketSize uint, log *zap.SugaredLogger) *Stor
 
 // CreateCheckpoint initalizes a new checkpoint for a specific workerID
 func (store Store) CreateCheckpoint(key string) error {
+	fmt.Printf("DEBUG -- create key is: START%sEND\n", key)
 	_, err := store.client.Txn(context.TODO()).Then(etcd.OpPut(key+"/", "")).Commit()
 	return err
 }
@@ -48,12 +50,14 @@ func (store Store) RetrieveCheckpoint(key string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	fmt.Printf("DEBUG -- retrieve key is: START%sEND\n", checkpoint.Kvs[0].Value)
 
 	return string(checkpoint.Kvs[0].Value), nil
 }
 
 // UpdateCheckpoint updates the current checkpoint information for a given workerID
 func (store Store) UpdateCheckpoint(key, value string) error {
+	fmt.Printf("DEBUG -- update key is: START%sEND, value: START%sEND\n", key, value)
 	_, err := store.client.Txn(context.TODO()).Then(etcd.OpPut(key+"/", value)).Commit()
 	return err
 }
