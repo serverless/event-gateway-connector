@@ -15,6 +15,7 @@ import (
 )
 
 const jobsDir = "jobs/"
+const workersDir = "workers/"
 
 // Store implements connection.Service using etcd KV as a backend.
 type Store struct {
@@ -137,6 +138,9 @@ func (store Store) DeleteConnection(space string, id connection.ID) error {
 	deleteConnection := etcd.OpDelete(string(id))
 	deleteJobs := etcd.OpDelete(fmt.Sprintf("%s/%s", id, jobsDir), etcd.WithPrefix())
 	resp, err := store.client.Txn(context.TODO()).Then(deleteConnection, deleteJobs).Commit()
+	// TODO: how do we delete the following prefix? "serverless-event-gateway-connector/workers/<conn.ID>"
+	//	deleteWorkers := etcd.OpDelete(fmt.Sprintf("%s%s", workersDir, id), etcd.WithPrefix())
+	//	resp, err := store.client.Txn(context.TODO()).Then(deleteConnection, deleteJobs, deleteWorkers).Commit()
 	if resp.Responses[0].GetResponseDeleteRange().Deleted == 0 {
 		return ErrKeyNotFound
 	}

@@ -98,12 +98,18 @@ func (a AWSKinesis) Fetch(shardID uint, lastSeq string) (*connection.Records, er
 	if err != nil {
 		return nil, err
 	}
+	if shardID == 0 {
+		fmt.Printf("DEBUG -- params: %+v, iter: %+v\n", params, iter)
+	}
 
 	records, err := a.service.GetRecords(&kinesis.GetRecordsInput{
 		ShardIterator: iter.ShardIterator,
 	})
 	if err != nil {
 		return nil, err
+	}
+	if shardID == 0 {
+		fmt.Printf("DEBUG -- records: %+v\n", records)
 	}
 
 	for _, rec := range records.Records {
