@@ -92,7 +92,7 @@ func (pool *WorkerPool) Start() {
 					pool.numWorkers += event.Job.NumberOfWorkers
 				case kv.Deleted:
 					if job, exists := pool.jobs[event.JobID]; exists {
-						job.stop()
+						job.stop(true)
 						delete(pool.jobs, event.JobID)
 						pool.numWorkers -= job.numWorkers
 					}
@@ -106,7 +106,7 @@ func (pool *WorkerPool) Start() {
 func (pool *WorkerPool) Stop() {
 	pool.jobsMutex.RLock()
 	for _, job := range pool.jobs {
-		job.stop()
+		job.stop(false)
 	}
 	pool.jobsMutex.RUnlock()
 
@@ -161,8 +161,11 @@ func (j *job) start() {
 	}
 }
 
-func (j *job) stop() {
+func (j *job) stop(deleted bool) {
 	for _, worker := range j.workers {
+		if deleted {
+			worker.checkpointKV.DeleteCheckpoint(worker.checkpointID)
+		}
 		worker.done <- true
 	}
 	j.waitGroup.Wait()

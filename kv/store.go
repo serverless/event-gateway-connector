@@ -15,8 +15,7 @@ import (
 )
 
 const jobsDir = "jobs/"
-
-//const workersDir = "workers/"
+const workersDir = "workers/"
 
 // Store implements connection.Service using etcd KV as a backend.
 type Store struct {
@@ -56,6 +55,12 @@ func (store Store) RetrieveCheckpoint(key string) (string, error) {
 // UpdateCheckpoint updates the current checkpoint information for a given workerID
 func (store Store) UpdateCheckpoint(key, value string) error {
 	_, err := store.client.Put(context.TODO(), key+"/", value)
+	return err
+}
+
+// DeleteCheckpoint removes the checkpoint altogether from the store when a job/worker is removed completely
+func (store Store) DeleteCheckpoint(key string) error {
+	_, err := store.client.Delete(context.TODO(), key+"/")
 	return err
 }
 
@@ -139,9 +144,6 @@ func (store Store) DeleteConnection(space string, id connection.ID) error {
 	deleteConnection := etcd.OpDelete(string(id))
 	deleteJobs := etcd.OpDelete(fmt.Sprintf("%s/%s", id, jobsDir), etcd.WithPrefix())
 	resp, err := store.client.Txn(context.TODO()).Then(deleteConnection, deleteJobs).Commit()
-	// TODO: how do we delete the following prefix? "serverless-event-gateway-connector/workers/<conn.ID>"
-	//	deleteWorkers := etcd.OpDelete(fmt.Sprintf("%s%s", workersDir, id), etcd.WithPrefix())
-	//	resp, err := store.client.Txn(context.TODO()).Then(deleteConnection, deleteJobs, deleteWorkers).Commit()
 	if resp.Responses[0].GetResponseDeleteRange().Deleted == 0 {
 		return ErrKeyNotFound
 	}
