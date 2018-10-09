@@ -55,7 +55,7 @@ func (store Store) RetrieveCheckpoint(key string) (string, error) {
 
 // UpdateCheckpoint updates the current checkpoint information for a given workerID
 func (store Store) UpdateCheckpoint(key, value string) error {
-	_, err := store.client.Txn(context.TODO()).Then(etcd.OpPut(key+"/", value)).Commit()
+	_, err := store.client.Put(context.TODO(), key+"/", value)
 	return err
 }
 
