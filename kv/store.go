@@ -15,7 +15,6 @@ import (
 )
 
 const jobsDir = "jobs/"
-const workersDir = "workers/"
 
 // Store implements connection.Service using etcd KV as a backend.
 type Store struct {
