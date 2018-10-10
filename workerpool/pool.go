@@ -92,7 +92,7 @@ func (pool *WorkerPool) Start() {
 					pool.numWorkers += event.Job.NumberOfWorkers
 				case kv.Deleted:
 					if job, exists := pool.jobs[event.JobID]; exists {
-						job.stop(true)
+						job.stop()
 						delete(pool.jobs, event.JobID)
 						pool.numWorkers -= job.numWorkers
 					}
@@ -106,7 +106,7 @@ func (pool *WorkerPool) Start() {
 func (pool *WorkerPool) Stop() {
 	pool.jobsMutex.RLock()
 	for _, job := range pool.jobs {
-		job.stop(false)
+		job.stop()
 	}
 	pool.jobsMutex.RUnlock()
 
@@ -161,11 +161,8 @@ func (j *job) start() {
 	}
 }
 
-func (j *job) stop(deleted bool) {
+func (j *job) stop() {
 	for _, worker := range j.workers {
-		if deleted {
-			worker.checkpointKV.DeleteCheckpoint(worker.checkpointID)
-		}
 		worker.done <- true
 	}
 	j.waitGroup.Wait()
@@ -223,13 +220,8 @@ func (w *worker) run() {
 			return
 		default:
 			checkpoint, err = w.checkpointKV.RetrieveCheckpoint(w.checkpointID)
-			if err != nil {
-				w.log.Debugw("worker checkpoint retrieve failed", "workerID", w.id, "error", err.Error())
-				w.log.Debugw("creating new checkpoint", "workerID", w.id, "checkpointID", w.checkpointID)
-				if err := w.checkpointKV.CreateCheckpoint(w.checkpointID); err != nil {
-					w.log.Debugw("failed to create workerID checkpoint", "workerID", w.id, "checkpointID", w.checkpointID, "error", err.Error())
-					return
-				}
+			if err != nil && err != kv.ErrKeyNotFound {
+				w.log.Debugw("worker checkpoint retrieve failed", "workerID", w.id, "checkpoint", checkpoint, "error", err.Error())
 			}
 			data, err = w.connection.Source.Fetch(w.id, checkpoint)
 			if err != nil {

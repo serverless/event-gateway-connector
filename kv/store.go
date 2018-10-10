@@ -15,6 +15,7 @@ import (
 )
 
 const jobsDir = "jobs/"
+const workerDir = "workers"
 
 // Store implements connection.Service using etcd KV as a backend.
 type Store struct {
@@ -30,12 +31,6 @@ func NewStore(client etcd.KV, jobsBucketSize uint, log *zap.SugaredLogger) *Stor
 		jobsBucketSize: jobsBucketSize,
 		log:            log,
 	}
-}
-
-// CreateCheckpoint initalizes a new checkpoint for a specific workerID
-func (store Store) CreateCheckpoint(key string) error {
-	_, err := store.client.Txn(context.TODO()).Then(etcd.OpPut(key+"/", "")).Commit()
-	return err
 }
 
 // RetrieveCheckpoint returns the existing checkpoint for a given workerID, or an error if not found
@@ -54,12 +49,6 @@ func (store Store) RetrieveCheckpoint(key string) (string, error) {
 // UpdateCheckpoint updates the current checkpoint information for a given workerID
 func (store Store) UpdateCheckpoint(key, value string) error {
 	_, err := store.client.Put(context.TODO(), key+"/", value)
-	return err
-}
-
-// DeleteCheckpoint removes the checkpoint altogether from the store when a job/worker is removed completely
-func (store Store) DeleteCheckpoint(key string) error {
-	_, err := store.client.Delete(context.TODO(), key+"/")
 	return err
 }
 
@@ -142,7 +131,10 @@ func (store Store) UpdateConnection(conn *connection.Connection) (*connection.Co
 func (store Store) DeleteConnection(space string, id connection.ID) error {
 	deleteConnection := etcd.OpDelete(string(id))
 	deleteJobs := etcd.OpDelete(fmt.Sprintf("%s/%s", id, jobsDir), etcd.WithPrefix())
-	resp, err := store.client.Txn(context.TODO()).Then(deleteConnection, deleteJobs).Commit()
+	deleteWorkers := etcd.OpDelete(fmt.Sprintf("%s/%s", workerDir, id), etcd.WithPrefix())
+
+	fmt.Printf("DEBUG -- delConn: %s, delJob: %s, delWork: %s\n", deleteConnection.KeyBytes(), deleteJobs.KeyBytes(), deleteWorkers.KeyBytes())
+	resp, err := store.client.Txn(context.TODO()).Then(deleteConnection, deleteJobs, deleteWorkers).Commit()
 	if resp.Responses[0].GetResponseDeleteRange().Deleted == 0 {
 		return ErrKeyNotFound
 	}

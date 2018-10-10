@@ -19,16 +19,18 @@ type Watcher struct {
 	connectionsKVClient etcd.KV
 	jobsWatchClient     etcd.Watcher
 	locksKVClient       etcd.KV
+	workerKVClient      etcd.KV
 	stopCh              chan struct{}
 	log                 *zap.SugaredLogger
 }
 
 // NewWatcher creates a new Watcher instance.
-func NewWatcher(connectionsKVClient etcd.KV, jobsWatcher etcd.Watcher, locksKVClient etcd.KV, log *zap.SugaredLogger) *Watcher {
+func NewWatcher(connectionsKVClient etcd.KV, jobsWatcher etcd.Watcher, locksKVClient etcd.KV, workerKVClient etcd.KV, log *zap.SugaredLogger) *Watcher {
 	return &Watcher{
 		connectionsKVClient: connectionsKVClient,
 		jobsWatchClient:     jobsWatcher,
 		locksKVClient:       locksKVClient,
+		workerKVClient:      workerKVClient,
 		stopCh:              make(chan struct{}),
 		log:                 log,
 	}
