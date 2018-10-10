@@ -140,7 +140,7 @@ func newJob(session *concurrency.Session, config *connection.Job, locksPrefix st
 func (j *job) start() {
 	for i := uint(0); i < j.numWorkers; i++ {
 		id := uint(j.id.JobNumber()*j.bucketSize) + i
-		worker := newWorker(id, j.connection, j.waitGroup, j.log.Named("worker"))
+		worker := newWorker(id, *j.connection, j.waitGroup, j.log.Named("worker"))
 		go worker.run()
 
 		j.workers[id] = worker
@@ -163,14 +163,14 @@ func (j *job) stop() {
 // worker is the internal representation of the worker process
 type worker struct {
 	id           uint
-	connection   *connection.Connection
+	connection   connection.Connection
 	eventGateway *http.Client
 	done         chan bool
 	waitGroup    *sync.WaitGroup
 	log          *zap.SugaredLogger
 }
 
-func newWorker(id uint, conn *connection.Connection, wg *sync.WaitGroup, log *zap.SugaredLogger) *worker {
+func newWorker(id uint, conn connection.Connection, wg *sync.WaitGroup, log *zap.SugaredLogger) *worker {
 	w := &worker{
 		id:         id,
 		connection: conn,
@@ -196,6 +196,9 @@ func (w *worker) run() {
 		select {
 		case <-w.done:
 			w.log.Debugw("trapped done signal", "workerID", w.id)
+			if err := w.connection.Source.Close(); err != nil {
+				w.log.Errorw("closing source failed", "workerID", w.id, "error", err.Error())
+			}
 			return
 		default:
 			data, err = w.connection.Source.Fetch(w.id, data.LastSequence)
@@ -206,7 +209,7 @@ func (w *worker) run() {
 
 			err = w.sendToEventGateway(data)
 			if err != nil {
-				w.log.Errorw("sending worker data to eventgateway",
+				w.log.Errorw("sending worker data to Event Gateway",
 					"workerID", w.id,
 					"error", err.Error(),
 					"space", w.connection.Space,

@@ -18,6 +18,7 @@ import (
 
 	flag "github.com/ogier/pflag"
 
+	_ "github.com/serverless/event-gateway-connector/sources/amqp"
 	_ "github.com/serverless/event-gateway-connector/sources/awskinesis"
 )
 
