@@ -67,6 +67,12 @@ func (pool *WorkerPool) Start() {
 						continue
 					}
 
+					// In some edge case Watcher will emit the same Created event for the same job twice.
+					// It prevents from creating the same job again.
+					if _, exists := pool.jobs[event.JobID]; exists {
+						continue
+					}
+
 					job, err := newJob(pool.session, event.Job, pool.locksPrefix, pool.log.Named("job"))
 					if err != nil {
 						pool.log.Debugw("creating new job failed", "error", err, "jobID", event.JobID)
