@@ -26,7 +26,7 @@ type WorkerPool struct {
 	maxWorkers   uint
 	numWorkers   uint
 	locksPrefix  string
-	checkpointKV *kv.Store
+	checkpointKV Checkpoint
 	session      *concurrency.Session
 	events       <-chan *kv.Event
 	jobs         map[connection.JobID]*job // map of job handlers assigned to each connection.ID
@@ -72,12 +72,6 @@ func (pool *WorkerPool) Start() {
 						continue
 					}
 
-					// In some edge case Watcher will emit the same Created event for the same job twice.
-					// It prevents from creating the same job again.
-					if _, exists := pool.jobs[event.JobID]; exists {
-						continue
-					}
-
 					job, err := newJob(pool.session, event.Job, pool.locksPrefix, pool.checkpointKV, pool.log.Named("job"))
 					if err != nil {
 						pool.log.Debugw("creating new job failed", "error", err, "jobID", event.JobID)
@@ -95,6 +89,9 @@ func (pool *WorkerPool) Start() {
 						job.stop()
 						delete(pool.jobs, event.JobID)
 						pool.numWorkers -= job.numWorkers
+						if err := pool.checkpointKV.DeleteCheckpoint(string(job.id)); err != nil {
+							pool.log.Debugw("could not remove worker checkpoint", "jobID", job.id, "error", err.Error())
+						}
 					}
 				}
 			}
@@ -118,7 +115,7 @@ type job struct {
 	id           connection.JobID
 	bucketSize   uint
 	numWorkers   uint
-	checkpointKV *kv.Store
+	checkpointKV Checkpoint
 	connection   *connection.Connection
 	mutex        *concurrency.Mutex
 	workers      map[uint]*worker
@@ -127,7 +124,7 @@ type job struct {
 }
 
 // newJob creates a lock in etcd and returns created job.
-func newJob(session *concurrency.Session, config *connection.Job, locksPrefix string, checkpointKV *kv.Store, log *zap.SugaredLogger) (*job, error) {
+func newJob(session *concurrency.Session, config *connection.Job, locksPrefix string, checkpointKV Checkpoint, log *zap.SugaredLogger) (*job, error) {
 	mutex := concurrency.NewMutex(session, locksPrefix+string(config.ID))
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*2)
@@ -177,7 +174,7 @@ func (j *job) stop() {
 type worker struct {
 	id           uint
 	checkpointID string
-	checkpointKV *kv.Store
+	checkpointKV Checkpoint
 	connection   connection.Connection
 	eventGateway *http.Client
 	done         chan bool
@@ -185,7 +182,7 @@ type worker struct {
 	log          *zap.SugaredLogger
 }
 
-func newWorker(id uint, jobID string, conn connection.Connection, wg *sync.WaitGroup, checkpointKV *kv.Store, log *zap.SugaredLogger) *worker {
+func newWorker(id uint, jobID string, conn connection.Connection, wg *sync.WaitGroup, checkpointKV Checkpoint, log *zap.SugaredLogger) *worker {
 	w := &worker{
 		id:           id,
 		checkpointID: fmt.Sprintf("%s_%d", jobID, id),

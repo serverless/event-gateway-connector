@@ -57,14 +57,11 @@ func main() {
 	}
 	defer client.Close()
 
-	workerKVClient := namespace.NewKV(client, checkpointPrefix)
-
 	// Watcher
 	watch := kv.NewWatcher(
 		namespace.NewKV(client, connectionsPrefix),
 		namespace.NewWatcher(client, connectionsPrefix),
 		namespace.NewKV(client, locksPrefix),
-		workerKVClient,
 		logger.Named("KV.Watcher"),
 	)
 	events, err := watch.Watch()
@@ -81,7 +78,7 @@ func main() {
 	wp := workerpool.New(&workerpool.Config{
 		MaxWorkers:   *maxWorkers,
 		LocksPrefix:  locksPrefix,
-		CheckpointKV: workerKVClient,
+		CheckpointKV: namespace.NewKV(client, checkpointPrefix),
 		Session:      session,
 		Events:       events,
 		Log:          logger.Named("WorkerPool"),

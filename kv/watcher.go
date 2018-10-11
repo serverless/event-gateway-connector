@@ -14,32 +14,27 @@ import (
 	etcd "github.com/coreos/etcd/clientv3"
 )
 
-// Watcher watches etcd and emits events when Job configuration was created or deleted.
+// Watcher watches etcd directory and emits events when Job configuration was added, changed or deleted.
 type Watcher struct {
 	connectionsKVClient etcd.KV
 	jobsWatchClient     etcd.Watcher
 	locksKVClient       etcd.KV
-	workerKVClient      etcd.KV
 	stopCh              chan struct{}
 	log                 *zap.SugaredLogger
 }
 
 // NewWatcher creates a new Watcher instance.
-func NewWatcher(connectionsKVClient etcd.KV, jobsWatcher etcd.Watcher, locksKVClient etcd.KV, workerKVClient etcd.KV, log *zap.SugaredLogger) *Watcher {
+func NewWatcher(connectionsKVClient etcd.KV, jobsWatcher etcd.Watcher, locksKVClient etcd.KV, log *zap.SugaredLogger) *Watcher {
 	return &Watcher{
 		connectionsKVClient: connectionsKVClient,
 		jobsWatchClient:     jobsWatcher,
 		locksKVClient:       locksKVClient,
-		workerKVClient:      workerKVClient,
 		stopCh:              make(chan struct{}),
 		log:                 log,
 	}
 }
 
-// Watch returns channel with Created and Deleted events. Also, it constantly fetches list
-// of Jobs and emits Created event for Jobs without locks. It prevents from having orphaned
-// Jobs that were handled by an instance that terminated. Because of that Created event can
-// occur twice for the same Job.
+// Watch function also emits events for pre-existing key/value pairs.
 func (w *Watcher) Watch() (<-chan *Event, error) {
 	eventsCh := make(chan *Event)
 
@@ -110,13 +105,13 @@ func (w *Watcher) Stop() {
 }
 
 const (
-	// Created happens when Job was added to configuration.
+	// Created happens when Conneciton was added to configuration.
 	Created int = iota
-	// Deleted happens when Job was deleted.
+	// Deleted happens when Connection was deleted.
 	Deleted
 )
 
-// Event represents event happened in Jobs configuration
+// Event represents event happened in Connections configuration
 type Event struct {
 	Type  int
 	JobID connection.JobID
