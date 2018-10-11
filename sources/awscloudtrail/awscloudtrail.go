@@ -25,16 +25,12 @@ type AWSCloudTrail struct {
 }
 
 func init() {
-	connection.RegisterSource(connection.SourceType("awscloudtrail"), SourceLoader{})
+	connection.RegisterSource(connection.SourceType("awscloudtrail"), Load)
 }
 
-// SourceLoader satisfies the connection SourceLoader interface
-type SourceLoader struct{}
-
-// Load will decode the provided JSON data into valid AWSCloudTrail format and establish
-// a connection to the endpoint. Provided the connection is successful, we return an instance
-// of the connection.Source, othewise an error.
-func (s SourceLoader) Load(data []byte) (connection.Source, error) {
+// Load will decode the provided JSON data into valid AWSCloudTrail format and create
+// a service instance.
+func Load(data []byte) (connection.Source, error) {
 	var src AWSCloudTrail
 	err := json.Unmarshal(data, &src)
 	if err != nil {
@@ -110,4 +106,9 @@ func (a AWSCloudTrail) Fetch(shardID uint, lastSeq string) (*connection.Records,
 // NumberOfWorkers always returns 1 as CloudTrail is heavily rate-limited.
 func (a AWSCloudTrail) NumberOfWorkers() uint {
 	return 1
+}
+
+// Close no-op.
+func (a AWSCloudTrail) Close() error {
+	return nil
 }

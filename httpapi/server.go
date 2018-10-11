@@ -9,8 +9,8 @@ import (
 	"github.com/serverless/event-gateway-connector/connection"
 )
 
-// ConfigAPI creates a new configuration API server.
-func ConfigAPI(store connection.Service, port int) *http.Server {
+// NewConfigAPI creates a new configuration API server.
+func NewConfigAPI(store connection.Service, port int) *http.Server {
 	router := httprouter.New()
 
 	api := &HTTPAPI{Connections: store}

@@ -42,7 +42,7 @@ func (c *Connection) UnmarshalJSON(data []byte) error {
 	c.SourceType = rawConn.SourceType
 
 	if loader, ok := sources[rawConn.SourceType]; ok {
-		src, err := loader.Load(*rawConn.SourceConfig)
+		src, err := loader(*rawConn.SourceConfig)
 		if err != nil {
 			return err
 		}
