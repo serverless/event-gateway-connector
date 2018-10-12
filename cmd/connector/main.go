@@ -25,9 +25,6 @@ import (
 )
 
 const prefix = "serverless-event-gateway-connector/"
-const connectionsPrefix = prefix + "connections/"
-const locksPrefix = prefix + "locks/jobs/"
-const checkpointPrefix = prefix + "workers/"
 
 const jobsBucketSize = 5
 
@@ -58,17 +55,15 @@ func main() {
 	defer client.Close()
 
 	// Watcher
-	watch := kv.NewWatcher(
-		namespace.NewKV(client, connectionsPrefix),
-		namespace.NewWatcher(client, connectionsPrefix),
-		namespace.NewKV(client, locksPrefix),
-		logger.Named("KV.Watcher"),
-	)
+	watch := kv.NewWatcher(client, logger.Named("KV.Watcher"))
 	events, err := watch.Watch()
 	if err != nil {
 		logger.Fatalf("unable to watch changes in etcd. Error: %s", err)
 	}
 	defer watch.Stop()
+
+	// KV store service
+	store := kv.NewStore(namespace.NewKV(client, prefix), jobsBucketSize, logger.Named("KV.Store"))
 
 	// Initalize the WorkerPool
 	session, err := concurrency.NewSession(client)
@@ -77,8 +72,8 @@ func main() {
 	}
 	wp := workerpool.New(&workerpool.Config{
 		MaxWorkers:   *maxWorkers,
-		LocksPrefix:  locksPrefix,
-		CheckpointKV: namespace.NewKV(client, checkpointPrefix),
+		LocksPrefix:  kv.GetLocksPrefix(),
+		CheckpointKV: store,
 		Session:      session,
 		Events:       events,
 		Log:          logger.Named("WorkerPool"),
@@ -86,9 +81,6 @@ func main() {
 	wp.Start()
 	defer wp.Stop()
 	logger.Debugw("started worker pool", "maxWorkers", maxWorkers)
-
-	// KV store service
-	store := kv.NewStore(namespace.NewKV(client, connectionsPrefix), jobsBucketSize, logger.Named("KV.Store"))
 
 	// Server
 	srv := httpapi.NewConfigAPI(store, *port)

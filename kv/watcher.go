@@ -12,6 +12,7 @@ import (
 	"go.uber.org/zap"
 
 	etcd "github.com/coreos/etcd/clientv3"
+	namespace "github.com/coreos/etcd/clientv3/namespace"
 )
 
 // Watcher watches etcd directory and emits events when Job configuration was added, changed or deleted.
@@ -19,16 +20,18 @@ type Watcher struct {
 	connectionsKVClient etcd.KV
 	jobsWatchClient     etcd.Watcher
 	locksKVClient       etcd.KV
+	checkpointKVClient  etcd.KV
 	stopCh              chan struct{}
 	log                 *zap.SugaredLogger
 }
 
 // NewWatcher creates a new Watcher instance.
-func NewWatcher(connectionsKVClient etcd.KV, jobsWatcher etcd.Watcher, locksKVClient etcd.KV, log *zap.SugaredLogger) *Watcher {
+func NewWatcher(client *etcd.Client, log *zap.SugaredLogger) *Watcher {
 	return &Watcher{
-		connectionsKVClient: connectionsKVClient,
-		jobsWatchClient:     jobsWatcher,
-		locksKVClient:       locksKVClient,
+		connectionsKVClient: namespace.NewKV(client, connectionsPrefix),
+		jobsWatchClient:     namespace.NewWatcher(client, connectionsPrefix),
+		locksKVClient:       namespace.NewKV(client, locksPrefix),
+		checkpointKVClient:  namespace.NewKV(client, checkpointPrefix),
 		stopCh:              make(chan struct{}),
 		log:                 log,
 	}

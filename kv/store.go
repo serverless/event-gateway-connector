@@ -15,6 +15,9 @@ import (
 )
 
 const jobsDir = "jobs/"
+const connectionsPrefix = "connections/"
+const locksPrefix = "locks/jobs/"
+const checkpointPrefix = "workers/"
 
 //const workerDir = "workers"
 
@@ -138,7 +141,8 @@ func (store Store) UpdateConnection(conn *connection.Connection) (*connection.Co
 func (store Store) DeleteConnection(space string, id connection.ID) error {
 	deleteConnection := etcd.OpDelete(string(id))
 	deleteJobs := etcd.OpDelete(fmt.Sprintf("%s/%s", id, jobsDir), etcd.WithPrefix())
-	resp, err := store.client.Txn(context.TODO()).Then(deleteConnection, deleteJobs).Commit()
+	deleteWorkers := etcd.OpDelete(fmt.Sprintf("%s%s", checkpointPrefix, id), etcd.WithPrefix())
+	resp, err := store.client.Txn(context.TODO()).Then(deleteConnection, deleteJobs, deleteWorkers).Commit()
 	if resp.Responses[0].GetResponseDeleteRange().Deleted == 0 {
 		return ErrKeyNotFound
 	}
@@ -173,6 +177,11 @@ func (store Store) createJobsOps(conn *connection.Connection) ([]etcd.Op, error)
 	}
 
 	return ops, nil
+}
+
+// GetLocksPrefix returns the prefix for the locks entry in the kv
+func GetLocksPrefix() string {
+	return locksPrefix
 }
 
 // ErrKeyNotFound is thrown when the key is not found in the store during a Get operation

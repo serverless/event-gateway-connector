@@ -10,7 +10,6 @@ import (
 	"sync"
 	"time"
 
-	etcd "github.com/coreos/etcd/clientv3"
 	"github.com/coreos/etcd/clientv3/concurrency"
 
 	"github.com/serverless/event-gateway-connector/connection"
@@ -26,7 +25,7 @@ type WorkerPool struct {
 	maxWorkers   uint
 	numWorkers   uint
 	locksPrefix  string
-	checkpointKV Checkpoint
+	checkpointKV Checkpointer
 	session      *concurrency.Session
 	events       <-chan *kv.Event
 	jobs         map[connection.JobID]*job // map of job handlers assigned to each connection.ID
@@ -38,7 +37,7 @@ type WorkerPool struct {
 type Config struct {
 	MaxWorkers   uint
 	LocksPrefix  string
-	CheckpointKV etcd.KV
+	CheckpointKV Checkpointer
 	Session      *concurrency.Session
 	Events       <-chan *kv.Event
 	Log          *zap.SugaredLogger
@@ -49,7 +48,7 @@ func New(config *Config) *WorkerPool {
 	return &WorkerPool{
 		maxWorkers:   config.MaxWorkers,
 		locksPrefix:  config.LocksPrefix,
-		checkpointKV: kv.NewStore(config.CheckpointKV, 1, config.Log),
+		checkpointKV: config.CheckpointKV,
 		session:      config.Session,
 		events:       config.Events,
 		jobs:         make(map[connection.JobID]*job),
@@ -89,9 +88,9 @@ func (pool *WorkerPool) Start() {
 						job.stop()
 						delete(pool.jobs, event.JobID)
 						pool.numWorkers -= job.numWorkers
-						if err := pool.checkpointKV.DeleteCheckpoint(string(job.id)); err != nil {
-							pool.log.Debugw("could not remove worker checkpoint", "jobID", job.id, "error", err.Error())
-						}
+						//						if err := pool.checkpointKV.DeleteCheckpoint(string(job.id)); err != nil {
+						//							pool.log.Debugw("could not remove worker checkpoint", "jobID", job.id, "error", err.Error())
+						//						}
 					}
 				}
 			}
@@ -115,7 +114,7 @@ type job struct {
 	id           connection.JobID
 	bucketSize   uint
 	numWorkers   uint
-	checkpointKV Checkpoint
+	checkpointKV Checkpointer
 	connection   *connection.Connection
 	mutex        *concurrency.Mutex
 	workers      map[uint]*worker
@@ -124,7 +123,7 @@ type job struct {
 }
 
 // newJob creates a lock in etcd and returns created job.
-func newJob(session *concurrency.Session, config *connection.Job, locksPrefix string, checkpointKV Checkpoint, log *zap.SugaredLogger) (*job, error) {
+func newJob(session *concurrency.Session, config *connection.Job, locksPrefix string, checkpointKV Checkpointer, log *zap.SugaredLogger) (*job, error) {
 	mutex := concurrency.NewMutex(session, locksPrefix+string(config.ID))
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*2)
@@ -174,7 +173,7 @@ func (j *job) stop() {
 type worker struct {
 	id           uint
 	checkpointID string
-	checkpointKV Checkpoint
+	checkpointKV Checkpointer
 	connection   connection.Connection
 	eventGateway *http.Client
 	done         chan bool
@@ -182,7 +181,7 @@ type worker struct {
 	log          *zap.SugaredLogger
 }
 
-func newWorker(id uint, jobID string, conn connection.Connection, wg *sync.WaitGroup, checkpointKV Checkpoint, log *zap.SugaredLogger) *worker {
+func newWorker(id uint, jobID string, conn connection.Connection, wg *sync.WaitGroup, checkpointKV Checkpointer, log *zap.SugaredLogger) *worker {
 	w := &worker{
 		id:           id,
 		checkpointID: fmt.Sprintf("%s_%d", jobID, id),
