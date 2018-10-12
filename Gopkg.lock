@@ -2,7 +2,7 @@
 
 
 [[projects]]
-  digest = "1:7455d8981b65ddbcaf460a2ab5a4792e5fefbc02917dc44ddea45498b12cf7d8"
+  digest = "1:43cb910b4dddc18e1851993bdf78a65be746bee713cd075ce09b24cca52882f9"
   name = "github.com/aws/aws-sdk-go"
   packages = [
     "aws",
@@ -33,6 +33,8 @@
     "private/protocol/query/queryutil",
     "private/protocol/rest",
     "private/protocol/xml/xmlutil",
+    "service/cloudtrail",
+    "service/cloudtrail/cloudtrailiface",
     "service/kinesis",
     "service/kinesis/kinesisiface",
     "service/sts",
@@ -225,6 +227,14 @@
   version = "0.9.1"
 
 [[projects]]
+  branch = "master"
+  digest = "1:0c088044c1c1ee83e723692442df4fec9b3f2e57f7a99773485c97adfbc31695"
+  name = "github.com/streadway/amqp"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "70e15c650864f4fc47f5d3c82ea117285480895d"
+
+[[projects]]
   digest = "1:777e729b475d3895c7229552aa10076f0d177daf37c0a72258006d046d329960"
   name = "go.uber.org/atomic"
   packages = ["."]
@@ -343,6 +353,8 @@
     "github.com/aws/aws-sdk-go/aws",
     "github.com/aws/aws-sdk-go/aws/credentials",
     "github.com/aws/aws-sdk-go/aws/session",
+    "github.com/aws/aws-sdk-go/service/cloudtrail",
+    "github.com/aws/aws-sdk-go/service/cloudtrail/cloudtrailiface",
     "github.com/aws/aws-sdk-go/service/kinesis",
     "github.com/aws/aws-sdk-go/service/kinesis/kinesisiface",
     "github.com/coreos/etcd/clientv3",
@@ -355,6 +367,7 @@
     "github.com/prometheus/client_golang/prometheus/promhttp",
     "github.com/segmentio/ksuid",
     "github.com/serverless/event-gateway/event",
+    "github.com/streadway/amqp",
     "go.uber.org/zap",
     "gopkg.in/go-playground/validator.v9",
   ]
