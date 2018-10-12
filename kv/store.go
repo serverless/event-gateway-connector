@@ -39,7 +39,7 @@ func NewStore(client etcd.KV, jobsBucketSize uint, log *zap.SugaredLogger) *Stor
 
 // RetrieveCheckpoint returns the existing checkpoint for a given workerID, or an error if not found
 func (store Store) RetrieveCheckpoint(key string) (string, error) {
-	checkpoint, err := store.client.Get(context.TODO(), key+"/", etcd.WithPrefix())
+	checkpoint, err := store.client.Get(context.TODO(), key+"/")
 	if checkpoint.Count == 0 {
 		return "", ErrKeyNotFound
 	}
@@ -56,11 +56,12 @@ func (store Store) UpdateCheckpoint(key, value string) error {
 	return err
 }
 
-// DeleteCheckpoint removes the checkpoint altogether from the store (usually after removing a connection)
-func (store Store) DeleteCheckpoint(key string) error {
-	_, err := store.client.Delete(context.TODO(), key+"/")
-	return err
-}
+//
+//// DeleteCheckpoint removes the checkpoint altogether from the store (usually after removing a connection)
+//func (store Store) DeleteCheckpoint(key string) error {
+//	_, err := store.client.Delete(context.TODO(), key+"/")
+//	return err
+//}
 
 // CreateConnection creates connection in etcd.
 func (store Store) CreateConnection(conn *connection.Connection) (*connection.Connection, error) {
