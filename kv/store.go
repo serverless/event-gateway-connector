@@ -14,12 +14,14 @@ import (
 	"github.com/serverless/event-gateway-connector/connection"
 )
 
-const jobsDir = "jobs/"
-const connectionsPrefix = "connections/"
-const locksPrefix = "locks/jobs/"
-const checkpointPrefix = "workers/"
+const (
+	prefix            = "serverless-event-gateway-connector/"
+	connectionsPrefix = "connections/"
+	locksPrefix       = "locks/jobs/"
+	checkpointPrefix  = "workers/"
 
-//const workerDir = "workers"
+	jobsDir = "jobs/"
+)
 
 // Store implements connection.Service using etcd KV as a backend.
 type Store struct {
@@ -39,7 +41,7 @@ func NewStore(client etcd.KV, jobsBucketSize uint, log *zap.SugaredLogger) *Stor
 
 // RetrieveCheckpoint returns the existing checkpoint for a given workerID, or an error if not found
 func (store Store) RetrieveCheckpoint(key string) (string, error) {
-	checkpoint, err := store.client.Get(context.TODO(), key+"/")
+	checkpoint, err := store.client.Get(context.TODO(), fmt.Sprintf("%s%s/", checkpointPrefix, key))
 	if checkpoint.Count == 0 {
 		return "", ErrKeyNotFound
 	}
@@ -52,13 +54,7 @@ func (store Store) RetrieveCheckpoint(key string) (string, error) {
 
 // UpdateCheckpoint updates the current checkpoint information for a given workerID
 func (store Store) UpdateCheckpoint(key, value string) error {
-	_, err := store.client.Put(context.TODO(), key+"/", value)
-	return err
-}
-
-// DeleteCheckpoint removes the checkpoint altogether from the store (usually after removing a connection)
-func (store Store) DeleteCheckpoint(key string) error {
-	_, err := store.client.Delete(context.TODO(), key+"/")
+	_, err := store.client.Put(context.TODO(), fmt.Sprintf("%s%s/", checkpointPrefix, key), value)
 	return err
 }
 
@@ -75,7 +71,7 @@ func (store Store) CreateConnection(conn *connection.Connection) (*connection.Co
 		return nil, err
 	}
 
-	createConnection := etcd.OpPut(string(conn.ID), string(value))
+	createConnection := etcd.OpPut(fmt.Sprintf("%s%s", connectionsPrefix, string(conn.ID)), string(value))
 	createJobs, err := store.createJobsOps(conn)
 	if err != nil {
 		return nil, err
@@ -98,7 +94,7 @@ func (store Store) UpdateConnection(conn *connection.Connection) (*connection.Co
 		return nil, err
 	}
 
-	existingPairs, err := store.client.Get(context.TODO(), string(conn.ID)+"/", etcd.WithPrefix())
+	existingPairs, err := store.client.Get(context.TODO(), fmt.Sprintf("%s%s/", connectionsPrefix, string(conn.ID)), etcd.WithPrefix())
 	if existingPairs.Count == 0 {
 		return nil, ErrKeyNotFound
 	}
@@ -108,7 +104,7 @@ func (store Store) UpdateConnection(conn *connection.Connection) (*connection.Co
 
 	ops := []etcd.Op{}
 	// update existing connection
-	ops = append(ops, etcd.OpPut(string(conn.ID), string(connectionValue)))
+	ops = append(ops, etcd.OpPut(fmt.Sprintf("%s%s", connectionsPrefix, string(conn.ID)), string(connectionValue)))
 	// update existing jobs. We cannot just delete all jobs and create new ones because etcd transactions
 	// doesn't allow deleting and created same key in one transaction
 	createJobs, err := store.createJobsOps(conn)
@@ -139,8 +135,8 @@ func (store Store) UpdateConnection(conn *connection.Connection) (*connection.Co
 
 // DeleteConnection deletes connection from etcd.
 func (store Store) DeleteConnection(space string, id connection.ID) error {
-	deleteConnection := etcd.OpDelete(string(id))
-	deleteJobs := etcd.OpDelete(fmt.Sprintf("%s/%s", id, jobsDir), etcd.WithPrefix())
+	deleteConnection := etcd.OpDelete(fmt.Sprintf("%s%s", connectionsPrefix, string(id)))
+	deleteJobs := etcd.OpDelete(fmt.Sprintf("%s%s/%s", connectionsPrefix, id, jobsDir), etcd.WithPrefix())
 	deleteWorkers := etcd.OpDelete(fmt.Sprintf("%s%s", checkpointPrefix, id), etcd.WithPrefix())
 	resp, err := store.client.Txn(context.TODO()).Then(deleteConnection, deleteJobs, deleteWorkers).Commit()
 	if resp.Responses[0].GetResponseDeleteRange().Deleted == 0 {
@@ -173,10 +169,15 @@ func (store Store) createJobsOps(conn *connection.Connection) ([]etcd.Op, error)
 			return []etcd.Op{}, err
 		}
 
-		ops = append(ops, etcd.OpPut(fmt.Sprintf("%s/%s%s", conn.ID, jobsDir, job.ID), string(value)))
+		ops = append(ops, etcd.OpPut(fmt.Sprintf("%s%s/%s%s", connectionsPrefix, conn.ID, jobsDir, job.ID), string(value)))
 	}
 
 	return ops, nil
+}
+
+// GetPrefix returns the default prefix for the kv set
+func GetPrefix() string {
+	return prefix
 }
 
 // GetLocksPrefix returns the prefix for the locks entry in the kv

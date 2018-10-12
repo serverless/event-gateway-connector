@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
@@ -23,8 +24,6 @@ import (
 	_ "github.com/serverless/event-gateway-connector/sources/awscloudtrail"
 	_ "github.com/serverless/event-gateway-connector/sources/awskinesis"
 )
-
-const prefix = "serverless-event-gateway-connector/"
 
 const jobsBucketSize = 5
 
@@ -63,7 +62,7 @@ func main() {
 	defer watch.Stop()
 
 	// KV store service
-	store := kv.NewStore(namespace.NewKV(client, prefix), jobsBucketSize, logger.Named("KV.Store"))
+	store := kv.NewStore(namespace.NewKV(client, kv.GetPrefix()), jobsBucketSize, logger.Named("KV.Store"))
 
 	// Initalize the WorkerPool
 	session, err := concurrency.NewSession(client)
@@ -72,7 +71,7 @@ func main() {
 	}
 	wp := workerpool.New(&workerpool.Config{
 		MaxWorkers:   *maxWorkers,
-		LocksPrefix:  kv.GetLocksPrefix(),
+		LocksPrefix:  fmt.Sprintf("%s%s", kv.GetPrefix(), kv.GetLocksPrefix()),
 		CheckpointKV: store,
 		Session:      session,
 		Events:       events,

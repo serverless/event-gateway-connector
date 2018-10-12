@@ -3,6 +3,7 @@ package kv
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"time"
 
@@ -28,10 +29,10 @@ type Watcher struct {
 // NewWatcher creates a new Watcher instance.
 func NewWatcher(client *etcd.Client, log *zap.SugaredLogger) *Watcher {
 	return &Watcher{
-		connectionsKVClient: namespace.NewKV(client, connectionsPrefix),
-		jobsWatchClient:     namespace.NewWatcher(client, connectionsPrefix),
-		locksKVClient:       namespace.NewKV(client, locksPrefix),
-		checkpointKVClient:  namespace.NewKV(client, checkpointPrefix),
+		connectionsKVClient: namespace.NewKV(client, fmt.Sprintf("%s%s", prefix, connectionsPrefix)),
+		jobsWatchClient:     namespace.NewWatcher(client, fmt.Sprintf("%s%s", prefix, connectionsPrefix)),
+		locksKVClient:       namespace.NewKV(client, fmt.Sprintf("%s%s", prefix, locksPrefix)),
+		checkpointKVClient:  namespace.NewKV(client, fmt.Sprintf("%s%s", prefix, checkpointPrefix)),
 		stopCh:              make(chan struct{}),
 		log:                 log,
 	}

@@ -88,9 +88,6 @@ func (pool *WorkerPool) Start() {
 						job.stop()
 						delete(pool.jobs, event.JobID)
 						pool.numWorkers -= job.numWorkers
-						//						if err := pool.checkpointKV.DeleteCheckpoint(string(job.id)); err != nil {
-						//							pool.log.Debugw("could not remove worker checkpoint", "jobID", job.id, "error", err.Error())
-						//						}
 					}
 				}
 			}

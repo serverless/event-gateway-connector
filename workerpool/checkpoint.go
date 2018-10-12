@@ -6,5 +6,4 @@ package workerpool
 type Checkpointer interface {
 	RetrieveCheckpoint(k string) (string, error)
 	UpdateCheckpoint(k, v string) error
-	DeleteCheckpoint(k string) error
 }
