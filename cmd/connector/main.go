@@ -62,7 +62,7 @@ func main() {
 	defer watch.Stop()
 
 	// KV store service
-	store := kv.NewStore(namespace.NewKV(client, kv.GetPrefix()), jobsBucketSize, logger.Named("KV.Store"))
+	store := kv.NewStore(namespace.NewKV(client, kv.PREFIX), jobsBucketSize, logger.Named("KV.Store"))
 
 	// Initalize the WorkerPool
 	session, err := concurrency.NewSession(client)
@@ -71,7 +71,7 @@ func main() {
 	}
 	wp := workerpool.New(&workerpool.Config{
 		MaxWorkers:   *maxWorkers,
-		LocksPrefix:  fmt.Sprintf("%s%s", kv.GetPrefix(), kv.GetLocksPrefix()),
+		LocksPrefix:  fmt.Sprintf("%s%s", kv.PREFIX, kv.LOCKSPREFIX),
 		CheckpointKV: store,
 		Session:      session,
 		Events:       events,
