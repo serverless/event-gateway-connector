@@ -16,7 +16,7 @@ import (
 	namespace "github.com/coreos/etcd/clientv3/namespace"
 )
 
-// Watcher watches etcd directory and emits events when Job configuration was added, changed or deleted.
+// Watcher watches etcd and emits events when Job configuration was created or deleted
 type Watcher struct {
 	connectionsKVClient etcd.KV
 	jobsWatchClient     etcd.Watcher
@@ -38,7 +38,10 @@ func NewWatcher(client *etcd.Client, log *zap.SugaredLogger) *Watcher {
 	}
 }
 
-// Watch function also emits events for pre-existing key/value pairs.
+// Watch returns channel with Created and Deleted events. Also, it constantly fetches list
+// of Jobs and emits Created event for Jobs without locks. It prevents from having orphaned
+// Jobs that were handled by an instance that terminated. Because of that Created event can
+// occur twice for the same Job
 func (w *Watcher) Watch() (<-chan *Event, error) {
 	eventsCh := make(chan *Event)
 
@@ -109,13 +112,14 @@ func (w *Watcher) Stop() {
 }
 
 const (
-	// Created happens when Conneciton was added to configuration.
+	// Created happens when Job added to configuration
 	Created int = iota
-	// Deleted happens when Connection was deleted.
+
+	// Deleted happens when Job deleted from configuration
 	Deleted
 )
 
-// Event represents event happened in Connections configuration
+// Event represents an event that occurs in the Job configuration
 type Event struct {
 	Type  int
 	JobID connection.JobID
