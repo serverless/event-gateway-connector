@@ -3,7 +3,6 @@ package amqp
 import (
 	"encoding/json"
 	"fmt"
-	"time"
 
 	"github.com/streadway/amqp"
 
@@ -64,14 +63,10 @@ func (a *AMQP) Fetch(shardID uint, lastSeq string) (*connection.Records, error) 
 		a.deliveryCh = ch
 	}
 
-	select {
-	case delivery := <-a.deliveryCh:
-		defer delivery.Ack(false)
-		return &connection.Records{Data: [][]byte{delivery.Body}}, nil
-	case <-time.After(1 * time.Second):
-	}
+	delivery := <-a.deliveryCh
+	defer delivery.Ack(false)
 
-	return &connection.Records{Data: [][]byte{}}, nil
+	return &connection.Records{Data: [][]byte{delivery.Body}}, nil
 }
 
 // NumberOfWorkers returns number of shards to handle by the pool

@@ -211,6 +211,9 @@ func (w *worker) run() {
 				w.log.Errorw("closing source failed", "workerID", w.id, "error", err.Error())
 			}
 			return
+		case <-time.After(1 * time.Second):
+			// This case is needed to unblock Fetch call below. Otherwise, it can block indefinitely
+			// if the source is using blocking call to the source message queue.
 		default:
 			checkpoint, err = w.checkpointKV.RetrieveCheckpoint(w.checkpointID)
 			if err != nil && err != kv.ErrKeyNotFound {
