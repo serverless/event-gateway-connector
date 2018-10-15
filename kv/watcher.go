@@ -3,6 +3,7 @@ package kv
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"time"
 
@@ -12,23 +13,26 @@ import (
 	"go.uber.org/zap"
 
 	etcd "github.com/coreos/etcd/clientv3"
+	namespace "github.com/coreos/etcd/clientv3/namespace"
 )
 
-// Watcher watches etcd and emits events when Job configuration was created or deleted.
+// Watcher watches etcd and emits events when Job configuration was created or deleted
 type Watcher struct {
 	connectionsKVClient etcd.KV
 	jobsWatchClient     etcd.Watcher
 	locksKVClient       etcd.KV
+	checkpointKVClient  etcd.KV
 	stopCh              chan struct{}
 	log                 *zap.SugaredLogger
 }
 
 // NewWatcher creates a new Watcher instance.
-func NewWatcher(connectionsKVClient etcd.KV, jobsWatcher etcd.Watcher, locksKVClient etcd.KV, log *zap.SugaredLogger) *Watcher {
+func NewWatcher(client *etcd.Client, log *zap.SugaredLogger) *Watcher {
 	return &Watcher{
-		connectionsKVClient: connectionsKVClient,
-		jobsWatchClient:     jobsWatcher,
-		locksKVClient:       locksKVClient,
+		connectionsKVClient: namespace.NewKV(client, fmt.Sprintf("%s%s", Prefix, ConnectionsPrefix)),
+		jobsWatchClient:     namespace.NewWatcher(client, fmt.Sprintf("%s%s", Prefix, ConnectionsPrefix)),
+		locksKVClient:       namespace.NewKV(client, fmt.Sprintf("%s%s", Prefix, LocksPrefix)),
+		checkpointKVClient:  namespace.NewKV(client, fmt.Sprintf("%s%s", Prefix, CheckpointPrefix)),
 		stopCh:              make(chan struct{}),
 		log:                 log,
 	}
@@ -37,7 +41,7 @@ func NewWatcher(connectionsKVClient etcd.KV, jobsWatcher etcd.Watcher, locksKVCl
 // Watch returns channel with Created and Deleted events. Also, it constantly fetches list
 // of Jobs and emits Created event for Jobs without locks. It prevents from having orphaned
 // Jobs that were handled by an instance that terminated. Because of that Created event can
-// occur twice for the same Job.
+// occur twice for the same Job
 func (w *Watcher) Watch() (<-chan *Event, error) {
 	eventsCh := make(chan *Event)
 
@@ -108,13 +112,14 @@ func (w *Watcher) Stop() {
 }
 
 const (
-	// Created happens when Job was added to configuration.
+	// Created happens when Job added to configuration
 	Created int = iota
-	// Deleted happens when Job was deleted.
+
+	// Deleted happens when Job deleted from configuration
 	Deleted
 )
 
-// Event represents event happened in Jobs configuration
+// Event represents an event that occurs in the Job configuration
 type Event struct {
 	Type  int
 	JobID connection.JobID

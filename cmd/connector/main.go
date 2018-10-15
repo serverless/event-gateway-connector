@@ -2,15 +2,16 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
 	etcd "github.com/coreos/etcd/clientv3"
 	"github.com/coreos/etcd/clientv3/concurrency"
-	"github.com/coreos/etcd/clientv3/namespace"
 	"github.com/serverless/event-gateway-connector/httpapi"
 	"github.com/serverless/event-gateway-connector/kv"
 	"github.com/serverless/event-gateway-connector/workerpool"
@@ -23,14 +24,11 @@ import (
 	_ "github.com/serverless/event-gateway-connector/sources/awskinesis"
 )
 
-const prefix = "serverless-event-gateway-connector/"
-const connectionsPrefix = prefix + "connections/"
-const locksPrefix = prefix + "locks/jobs/"
-
 const jobsBucketSize = 5
 
 var maxWorkers = flag.UintP("workers", "w", 10, "Maximum number of workers for the pool.")
 var port = flag.IntP("port", "p", 4002, "Port to serve configuration API on")
+var etcdClient = flag.StringP("etcd-hosts", "e", "localhost:2379", "Comma-delimited list of hosts in etcd cluster.")
 
 func main() {
 	flag.Parse()
@@ -46,7 +44,7 @@ func main() {
 
 	// etcd client
 	client, err := etcd.New(etcd.Config{
-		Endpoints:   []string{"localhost:2379"},
+		Endpoints:   strings.Split(*etcdClient, ","),
 		DialTimeout: 2 * time.Second,
 	})
 	if err != nil {
@@ -55,16 +53,15 @@ func main() {
 	defer client.Close()
 
 	// Watcher
-	watch := kv.NewWatcher(
-		namespace.NewKV(client, connectionsPrefix),
-		namespace.NewWatcher(client, connectionsPrefix),
-		namespace.NewKV(client, locksPrefix),
-		logger.Named("KV.Watcher"))
+	watch := kv.NewWatcher(client, logger.Named("KV.Watcher"))
 	events, err := watch.Watch()
 	if err != nil {
 		logger.Fatalf("unable to watch changes in etcd. Error: %s", err)
 	}
 	defer watch.Stop()
+
+	// KV store service
+	store := kv.NewStore(client, jobsBucketSize, logger.Named("KV.Store"))
 
 	// Initalize the WorkerPool
 	session, err := concurrency.NewSession(client)
@@ -72,18 +69,16 @@ func main() {
 		logger.Fatalf("unable to create session in etcd. Error: %s", err)
 	}
 	wp := workerpool.New(&workerpool.Config{
-		MaxWorkers:  *maxWorkers,
-		LocksPrefix: locksPrefix,
-		Session:     session,
-		Events:      events,
-		Log:         logger.Named("WorkerPool"),
+		MaxWorkers:   *maxWorkers,
+		LocksPrefix:  fmt.Sprintf("%s%s", kv.Prefix, kv.LocksPrefix),
+		CheckpointKV: store,
+		Session:      session,
+		Events:       events,
+		Log:          logger.Named("WorkerPool"),
 	})
 	wp.Start()
 	defer wp.Stop()
 	logger.Debugw("started worker pool", "maxWorkers", maxWorkers)
-
-	// KV store service
-	store := kv.NewStore(namespace.NewKV(client, connectionsPrefix), jobsBucketSize, logger.Named("KV.Store"))
 
 	// Server
 	srv := httpapi.NewConfigAPI(store, *port)
