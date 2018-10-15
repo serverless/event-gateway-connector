@@ -12,7 +12,6 @@ import (
 
 	etcd "github.com/coreos/etcd/clientv3"
 	"github.com/coreos/etcd/clientv3/concurrency"
-	"github.com/coreos/etcd/clientv3/namespace"
 	"github.com/serverless/event-gateway-connector/httpapi"
 	"github.com/serverless/event-gateway-connector/kv"
 	"github.com/serverless/event-gateway-connector/workerpool"
@@ -62,7 +61,7 @@ func main() {
 	defer watch.Stop()
 
 	// KV store service
-	store := kv.NewStore(namespace.NewKV(client, kv.PREFIX), jobsBucketSize, logger.Named("KV.Store"))
+	store := kv.NewStore(client, jobsBucketSize, logger.Named("KV.Store"))
 
 	// Initalize the WorkerPool
 	session, err := concurrency.NewSession(client)
@@ -71,7 +70,7 @@ func main() {
 	}
 	wp := workerpool.New(&workerpool.Config{
 		MaxWorkers:   *maxWorkers,
-		LocksPrefix:  fmt.Sprintf("%s%s", kv.PREFIX, kv.LOCKSPREFIX),
+		LocksPrefix:  fmt.Sprintf("%s%s", kv.Prefix, kv.LocksPrefix),
 		CheckpointKV: store,
 		Session:      session,
 		Events:       events,

@@ -29,10 +29,10 @@ type Watcher struct {
 // NewWatcher creates a new Watcher instance.
 func NewWatcher(client *etcd.Client, log *zap.SugaredLogger) *Watcher {
 	return &Watcher{
-		connectionsKVClient: namespace.NewKV(client, fmt.Sprintf("%s%s", PREFIX, CONNECTIONSPREFIX)),
-		jobsWatchClient:     namespace.NewWatcher(client, fmt.Sprintf("%s%s", PREFIX, CONNECTIONSPREFIX)),
-		locksKVClient:       namespace.NewKV(client, fmt.Sprintf("%s%s", PREFIX, LOCKSPREFIX)),
-		checkpointKVClient:  namespace.NewKV(client, fmt.Sprintf("%s%s", PREFIX, CHECKPOINTPREFIX)),
+		connectionsKVClient: namespace.NewKV(client, fmt.Sprintf("%s%s", Prefix, ConnectionsPrefix)),
+		jobsWatchClient:     namespace.NewWatcher(client, fmt.Sprintf("%s%s", Prefix, ConnectionsPrefix)),
+		locksKVClient:       namespace.NewKV(client, fmt.Sprintf("%s%s", Prefix, LocksPrefix)),
+		checkpointKVClient:  namespace.NewKV(client, fmt.Sprintf("%s%s", Prefix, CheckpointPrefix)),
 		stopCh:              make(chan struct{}),
 		log:                 log,
 	}
