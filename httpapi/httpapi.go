@@ -32,9 +32,10 @@ func (h HTTPAPI) listConnections(w http.ResponseWriter, r *http.Request, params 
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		encoder.Encode(&Response{Errors: []Error{{Message: err.Error()}}})
-	} else {
-		encoder.Encode(&ConnectionsResponse{Connections: connections})
+		return
 	}
+
+	encoder.Encode(&ConnectionsResponse{Connections: connections})
 }
 
 func (h HTTPAPI) createConnection(w http.ResponseWriter, r *http.Request, params httprouter.Params) {
