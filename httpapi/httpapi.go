@@ -17,9 +17,24 @@ type HTTPAPI struct {
 // RegisterRoutes register HTTP API routes
 func (h HTTPAPI) RegisterRoutes(router *httprouter.Router) {
 	router.Handler("GET", "/v1/metrics", promhttp.Handler())
+	router.GET("/v1/spaces/:space/connections", h.listConnections)
 	router.POST("/v1/spaces/:space/connections", h.createConnection)
 	router.PUT("/v1/spaces/:space/connections/:id", h.updateConnection)
 	router.DELETE("/v1/spaces/:space/connections/:id", h.deleteConnection)
+}
+
+func (h HTTPAPI) listConnections(w http.ResponseWriter, r *http.Request, params httprouter.Params) {
+	w.Header().Set("Content-Type", "application/json")
+	encoder := json.NewEncoder(w)
+
+	space := params.ByName("space")
+	connections, err := h.Connections.ListConnections(space)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		encoder.Encode(&Response{Errors: []Error{{Message: err.Error()}}})
+	} else {
+		encoder.Encode(&ConnectionsResponse{Connections: connections})
+	}
 }
 
 func (h HTTPAPI) createConnection(w http.ResponseWriter, r *http.Request, params httprouter.Params) {
@@ -82,4 +97,9 @@ func (h HTTPAPI) deleteConnection(w http.ResponseWriter, r *http.Request, params
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// ConnectionsResponse is a HTTPAPI JSON response containing connections.
+type ConnectionsResponse struct {
+	Connections []*connection.Connection `json:"connections"`
 }
