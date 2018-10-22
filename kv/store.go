@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"strings"
 
 	"go.uber.org/zap"
 
@@ -64,6 +65,35 @@ func (store Store) RetrieveCheckpoint(key string) (string, error) {
 func (store Store) UpdateCheckpoint(key, value string) error {
 	_, err := store.client.Put(context.TODO(), fmt.Sprintf("%s%s/", CheckpointPrefix, key), value)
 	return err
+}
+
+// ListConnections returns list of connections
+func (store Store) ListConnections(space string) ([]*connection.Connection, error) {
+	conns := []*connection.Connection{}
+
+	kvs, err := store.client.Get(context.TODO(), ConnectionsPrefix, etcd.WithPrefix())
+	if err != nil && err != ErrKeyNotFound {
+		return nil, err
+	}
+
+	for _, kv := range kvs.Kvs {
+		// ignore jobs KVs
+		if strings.Contains(string(kv.Key), jobsDir) {
+			continue
+		}
+
+		conn := &connection.Connection{}
+		if err = json.Unmarshal(kv.Value, conn); err != nil {
+			return nil, err
+		}
+
+		// filter out connections from a different space
+		if conn.Space == space {
+			conns = append(conns, conn)
+		}
+	}
+
+	return conns, nil
 }
 
 // CreateConnection creates connection in etcd.
