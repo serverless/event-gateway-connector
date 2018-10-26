@@ -127,13 +127,15 @@ func (store Store) CreateConnection(conn *connection.Connection) (*connection.Co
 
 // UpdateConnection udpates connection in etcd.
 func (store Store) UpdateConnection(conn *connection.Connection) (*connection.Connection, error) {
+	connectionKey := ConnectionsPrefix + string(conn.ID)
+
 	connectionValue, err := json.Marshal(conn)
 	if err != nil {
 		return nil, err
 	}
 
-	existingPairs, err := store.client.Get(context.TODO(), fmt.Sprintf("%s%s/", ConnectionsPrefix, string(conn.ID)), etcd.WithPrefix())
-	if existingPairs.Count == 0 {
+	existingJobs, err := store.client.Get(context.TODO(), connectionKey+"/", etcd.WithPrefix())
+	if existingJobs.Count == 0 {
 		return nil, ErrKeyNotFound
 	}
 	if err != nil {
@@ -141,8 +143,6 @@ func (store Store) UpdateConnection(conn *connection.Connection) (*connection.Co
 	}
 
 	ops := []etcd.Op{}
-	// update existing connection
-	ops = append(ops, etcd.OpPut(fmt.Sprintf("%s%s", ConnectionsPrefix, string(conn.ID)), string(connectionValue)))
 	// update existing jobs. We cannot just delete all jobs and create new ones because etcd transactions
 	// doesn't allow deleting and created same key in one transaction
 	createJobs, err := store.createJobsOps(conn)
@@ -151,15 +151,18 @@ func (store Store) UpdateConnection(conn *connection.Connection) (*connection.Co
 	}
 	ops = append(ops, createJobs...)
 	// delete remaining jobs from the store
-	if len(createJobs) < len(existingPairs.Kvs) {
-		for i := len(existingPairs.Kvs) - 1; i < len(existingPairs.Kvs); i++ {
-			ops = append(ops, etcd.OpDelete(string(existingPairs.Kvs[i].Key)))
+	if len(createJobs) < len(existingJobs.Kvs) {
+		for i := len(existingJobs.Kvs) - 1; i < len(existingJobs.Kvs); i++ {
+			ops = append(ops, etcd.OpDelete(string(existingJobs.Kvs[i].Key)))
 		}
 	}
 
+	// update existing connection
+	ops = append(ops, etcd.OpPut(connectionKey, string(connectionValue)))
+
 	_, err = store.client.
 		Txn(context.TODO()).
-		If(etcd.Compare(etcd.ModRevision(string(conn.ID)), "=", existingPairs.Kvs[0].ModRevision)).
+		If(etcd.Compare(etcd.ModRevision(connectionKey), "=", existingJobs.Kvs[0].ModRevision)).
 		Then(ops...).
 		Commit()
 	if err != nil {
