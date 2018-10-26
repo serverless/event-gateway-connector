@@ -3,10 +3,13 @@ package httpapi
 import (
 	"encoding/json"
 	"net/http"
+	"net/url"
+	"strings"
 
 	"github.com/julienschmidt/httprouter"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/serverless/event-gateway-connector/connection"
+	"github.com/serverless/event-gateway/metadata"
 )
 
 // HTTPAPI exposes REST API for configuring Connector
@@ -28,7 +31,8 @@ func (h HTTPAPI) listConnections(w http.ResponseWriter, r *http.Request, params 
 	encoder := json.NewEncoder(w)
 
 	space := params.ByName("space")
-	connections, err := h.Connections.ListConnections(space)
+	filters := extractMetadataFilters(r.URL.Query())
+	connections, err := h.Connections.ListConnections(space, filters...)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		encoder.Encode(&Response{Errors: []Error{{Message: err.Error()}}})
@@ -103,4 +107,15 @@ func (h HTTPAPI) deleteConnection(w http.ResponseWriter, r *http.Request, params
 // ConnectionsResponse is a HTTPAPI JSON response containing connections.
 type ConnectionsResponse struct {
 	Connections []*connection.Connection `json:"connections"`
+}
+
+func extractMetadataFilters(query url.Values) (filters []metadata.Filter) {
+	prefix := "metadata."
+
+	for key, value := range query {
+		if strings.HasPrefix(key, prefix) {
+			filters = append(filters, metadata.Filter{Key: strings.TrimPrefix(key, prefix), Value: value[0]})
+		}
+	}
+	return
 }

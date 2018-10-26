@@ -3,6 +3,8 @@ package connection
 import (
 	"encoding/json"
 	"fmt"
+
+	"github.com/serverless/event-gateway/metadata"
 )
 
 // ID uniquely identifies a conneciton.
@@ -17,6 +19,8 @@ type Connection struct {
 	SourceType   SourceType       `json:"type"`
 	SourceConfig *json.RawMessage `json:"source"`
 	Source       Source           `json:"-"`
+
+	Metadata metadata.Metadata `json:"metadata,omitempty"`
 }
 
 // UnmarshalJSON is a custom unmarshaller for the Controller struct in order to handle the various
@@ -40,6 +44,7 @@ func (c *Connection) UnmarshalJSON(data []byte) error {
 	c.Target = rawConn.Target
 	c.EventType = rawConn.EventType
 	c.SourceType = rawConn.SourceType
+	c.Metadata = rawConn.Metadata
 
 	if loader, ok := sources[rawConn.SourceType]; ok {
 		src, err := loader(*rawConn.SourceConfig)
@@ -73,6 +78,7 @@ func (c *Connection) MarshalJSON() ([]byte, error) {
 		EventType:    c.EventType,
 		SourceType:   c.SourceType,
 		SourceConfig: &rawConfig,
+		Metadata:     c.Metadata,
 	}
 
 	return json.Marshal(conn)

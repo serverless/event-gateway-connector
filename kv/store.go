@@ -14,6 +14,7 @@ import (
 	namespace "github.com/coreos/etcd/clientv3/namespace"
 	"github.com/segmentio/ksuid"
 	"github.com/serverless/event-gateway-connector/connection"
+	"github.com/serverless/event-gateway/metadata"
 )
 
 const (
@@ -68,7 +69,7 @@ func (store Store) UpdateCheckpoint(key, value string) error {
 }
 
 // ListConnections returns list of connections
-func (store Store) ListConnections(space string) ([]*connection.Connection, error) {
+func (store Store) ListConnections(space string, filters ...metadata.Filter) ([]*connection.Connection, error) {
 	conns := []*connection.Connection{}
 
 	kvs, err := store.client.Get(context.TODO(), ConnectionsPrefix, etcd.WithPrefix())
@@ -85,6 +86,10 @@ func (store Store) ListConnections(space string) ([]*connection.Connection, erro
 		conn := &connection.Connection{}
 		if err = json.Unmarshal(kv.Value, conn); err != nil {
 			return nil, err
+		}
+
+		if !conn.Metadata.Check(filters...) {
+			continue
 		}
 
 		// filter out connections from a different space
