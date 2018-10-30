@@ -117,5 +117,5 @@ func extractMetadataFilters(query url.Values) (filters []metadata.Filter) {
 			filters = append(filters, metadata.Filter{Key: strings.TrimPrefix(key, prefix), Value: value[0]})
 		}
 	}
-	return
+	return filters
 }
