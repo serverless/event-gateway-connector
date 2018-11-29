@@ -109,7 +109,7 @@ func (k Kafka) Fetch(ctx context.Context, partitionIndex uint, savedOffset strin
 
 	var timeout time.Duration
 	if d, ok := ctx.Deadline(); ok {
-		timeout = d.Sub(time.Now())
+		timeout = time.Until(d)
 	}
 
 	msg, err := consumer.ReadMessage(timeout)

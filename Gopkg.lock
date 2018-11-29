@@ -374,6 +374,7 @@
     "github.com/ogier/pflag",
     "github.com/prometheus/client_golang/prometheus",
     "github.com/prometheus/client_golang/prometheus/promhttp",
+    "github.com/satori/go.uuid",
     "github.com/segmentio/ksuid",
     "github.com/serverless/event-gateway/event",
     "github.com/serverless/event-gateway/metadata",
