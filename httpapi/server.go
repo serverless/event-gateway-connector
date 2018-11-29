@@ -17,7 +17,7 @@ func NewConfigAPI(store connection.Service, port int) *http.Server {
 	api.RegisterRoutes(router)
 
 	handler := &http.Server{
-		Addr:         fmt.Sprintf(":%d", port),
+		Addr:         fmt.Sprintf("localhost:%d", port),
 		Handler:      router,
 		ReadTimeout:  3 * time.Second,
 		WriteTimeout: 3 * time.Second,

@@ -22,6 +22,7 @@ import (
 	_ "github.com/serverless/event-gateway-connector/sources/amqp"
 	_ "github.com/serverless/event-gateway-connector/sources/awscloudtrail"
 	_ "github.com/serverless/event-gateway-connector/sources/awskinesis"
+	_ "github.com/serverless/event-gateway-connector/sources/kafka"
 )
 
 const jobsBucketSize = 5
