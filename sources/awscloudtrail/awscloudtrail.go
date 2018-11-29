@@ -1,6 +1,7 @@
 package awscloudtrail
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -67,7 +68,7 @@ func (a AWSCloudTrail) validate() error {
 }
 
 // Fetch retrieves the next event from the awscloudtrail source
-func (a AWSCloudTrail) Fetch(shardID uint, lastSeq string) (*connection.Records, error) {
+func (a AWSCloudTrail) Fetch(ctx context.Context, shardID uint, lastSeq string) (*connection.Records, error) {
 	var start time.Time
 	ret := &connection.Records{}
 	maxResults := int64(50)
@@ -87,7 +88,7 @@ func (a AWSCloudTrail) Fetch(shardID uint, lastSeq string) (*connection.Records,
 		params.StartTime = &start
 	}
 
-	resp, err := a.Service.LookupEvents(params)
+	resp, err := a.Service.LookupEventsWithContext(ctx, params)
 	if err != nil {
 		return nil, err
 	}

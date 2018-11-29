@@ -1,6 +1,7 @@
 package amqp
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 
@@ -41,7 +42,7 @@ func Load(data []byte) (connection.Source, error) {
 
 // Fetch lazy loads AMQP connection and channel and blocks until there is another message
 // in the delivery channel.
-func (a *AMQP) Fetch(shardID uint, lastSeq string) (*connection.Records, error) {
+func (a *AMQP) Fetch(ctx context.Context, shardID uint, lastSeq string) (*connection.Records, error) {
 	if a.deliveryCh == nil {
 		connection, err := amqp.Dial(a.URL)
 		if err != nil {
@@ -63,10 +64,13 @@ func (a *AMQP) Fetch(shardID uint, lastSeq string) (*connection.Records, error) 
 		a.deliveryCh = ch
 	}
 
-	delivery := <-a.deliveryCh
-	defer delivery.Ack(false)
-
-	return &connection.Records{Data: [][]byte{delivery.Body}}, nil
+	select {
+	case <-ctx.Done():
+		return &connection.Records{}, nil
+	case delivery := <-a.deliveryCh:
+		defer delivery.Ack(false)
+		return &connection.Records{Data: [][]byte{delivery.Body}}, nil
+	}
 }
 
 // NumberOfWorkers returns number of shards to handle by the pool
