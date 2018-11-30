@@ -15,9 +15,11 @@ import (
 
 // Kafka is a configuration used to configure Kafka topic as a source.
 type Kafka struct {
-	BoostrapServers string `json:"bootstrapServers" validate:"required"`
-	Offset          string `json:"offset" validate:"eq=earliest|eq=latest"`
-	Topic           string `json:"topic" validate:"required"`
+	BoostrapServers      string `json:"bootstrapServers" validate:"required"`
+	Offset               string `json:"offset" validate:"eq=earliest|eq=latest"`
+	Topic                string `json:"topic" validate:"required"`
+	ConfluentCloudKey    string `json:"confluentCloudKey"`
+	ConfluentCloudSecret string `json:"confluentCloudSecret"`
 
 	consumers  []*kafkalib.Consumer
 	partitions []kafkalib.TopicPartition
@@ -47,6 +49,14 @@ func Load(data []byte) (connection.Source, error) {
 		"session.timeout.ms":              5000,
 		"go.application.rebalance.enable": true, // delegate Assign() responsibility to the source
 		"default.topic.config":            kafkalib.ConfigMap{"auto.offset.reset": src.Offset}}
+	if src.ConfluentCloudKey != "" && src.ConfluentCloudSecret != "" {
+		config["broker.version.fallback"] = "0.10.0.0"
+		config["api.version.fallback.ms"] = 0
+		config["sasl.mechanisms"] = "PLAIN"
+		config["security.protocol"] = "SASL_SSL"
+		config["sasl.username"] = src.ConfluentCloudKey
+		config["sasl.password"] = src.ConfluentCloudSecret
+	}
 
 	metadata, err := src.fetchPartitions(src.Topic, config)
 	if err != nil {
@@ -57,12 +67,7 @@ func Load(data []byte) (connection.Source, error) {
 	consumers := make([]*kafkalib.Consumer, len(metadata))
 	partitions := make([]kafkalib.TopicPartition, len(metadata))
 	for i, meta := range metadata {
-		consumer, err := kafkalib.NewConsumer(&kafkalib.ConfigMap{
-			"bootstrap.servers":               src.BoostrapServers,
-			"group.id":                        uuid.NewV4(),
-			"session.timeout.ms":              6000,
-			"go.application.rebalance.enable": true, // delegate Assign() responsibility to the source
-			"default.topic.config":            kafkalib.ConfigMap{"auto.offset.reset": src.Offset}})
+		consumer, err := kafkalib.NewConsumer(&config)
 		if err != nil {
 			return nil, fmt.Errorf("unable to create consumer: %s", err.Error())
 		}
@@ -136,13 +141,13 @@ func (k Kafka) Close() error {
 func (k Kafka) fetchPartitions(topic string, config kafkalib.ConfigMap) ([]kafkalib.PartitionMetadata, error) {
 	consumer, err := kafkalib.NewConsumer(&config)
 	if err != nil {
-		return nil, fmt.Errorf("unable to fetch topic partitions: %s", err.Error())
+		return nil, err
 	}
 	defer consumer.Close()
 
 	metadata, err := consumer.GetMetadata(&topic, false, 100000)
 	if err != nil {
-		return nil, fmt.Errorf("unable to create consumer: %s", err.Error())
+		return nil, err
 	}
 	return metadata.Topics[topic].Partitions, nil
 }
