@@ -1,6 +1,7 @@
 package awskinesis
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"sort"
@@ -80,7 +81,7 @@ func Load(data []byte) (connection.Source, error) {
 
 // Fetch retrieves the next document from the awskinesis source
 // Borrrowed some items from https://github.com/harlow/kinesis-consumer/blob/master/consumer.go#L251
-func (a AWSKinesis) Fetch(shardID uint, lastSeq string) (*connection.Records, error) {
+func (a AWSKinesis) Fetch(ctx context.Context, shardID uint, lastSeq string) (*connection.Records, error) {
 	ret := &connection.Records{LastSequence: lastSeq}
 	params := &kinesis.GetShardIteratorInput{
 		ShardId:           a.shards[shardID].ShardId,
@@ -94,12 +95,12 @@ func (a AWSKinesis) Fetch(shardID uint, lastSeq string) (*connection.Records, er
 	}
 
 	// set up the shard iterator for our particular shardID
-	iter, err := a.service.GetShardIterator(params)
+	iter, err := a.service.GetShardIteratorWithContext(ctx, params)
 	if err != nil {
 		return nil, err
 	}
 
-	records, err := a.service.GetRecords(&kinesis.GetRecordsInput{
+	records, err := a.service.GetRecordsWithContext(ctx, &kinesis.GetRecordsInput{
 		ShardIterator: iter.ShardIterator,
 	})
 	if err != nil {

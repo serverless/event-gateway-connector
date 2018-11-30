@@ -211,18 +211,18 @@ func (w *worker) run() {
 				w.log.Errorw("closing source failed", "workerID", w.id, "error", err.Error())
 			}
 			return
-		case <-time.After(1 * time.Second):
-			// This case is needed to unblock Fetch call below. Otherwise, it can block indefinitely
-			// if the source is using blocking call to the source message queue.
 		default:
 			checkpoint, err = w.checkpointKV.RetrieveCheckpoint(w.checkpointID)
 			if err != nil && err != kv.ErrKeyNotFound {
 				w.log.Debugw("worker checkpoint retrieve failed", "workerID", w.id, "checkpoint", checkpoint, "error", err.Error())
 			}
-			data, err = w.connection.Source.Fetch(w.id, checkpoint)
+
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+
+			data, err = w.connection.Source.Fetch(ctx, w.id, checkpoint)
 			if err != nil {
 				w.log.Errorw("worker failed", "workerID", w.id, "error", err.Error())
-				return
 			}
 			if len(data.Data) == 0 {
 				continue
