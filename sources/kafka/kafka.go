@@ -41,27 +41,22 @@ func Load(data []byte) (connection.Source, error) {
 		return nil, fmt.Errorf("missing required fields for kafka source: %s", err.Error())
 	}
 
-	// fetch partition metadata
-	metadataConsumer, err := kafkalib.NewConsumer(&kafkalib.ConfigMap{
+	config := kafkalib.ConfigMap{
 		"bootstrap.servers":               src.BoostrapServers,
 		"group.id":                        uuid.NewV4(),
-		"session.timeout.ms":              6000,
+		"session.timeout.ms":              5000,
 		"go.application.rebalance.enable": true, // delegate Assign() responsibility to the source
-		"default.topic.config":            kafkalib.ConfigMap{"auto.offset.reset": src.Offset}})
-	if err != nil {
-		return nil, fmt.Errorf("unable to create consumer: %s", err.Error())
-	}
+		"default.topic.config":            kafkalib.ConfigMap{"auto.offset.reset": src.Offset}}
 
-	metadata, err := metadataConsumer.GetMetadata(&src.Topic, false, 100000)
+	metadata, err := src.fetchPartitions(src.Topic, config)
 	if err != nil {
-		return nil, fmt.Errorf("unable to create consumer: %s", err.Error())
+		return nil, fmt.Errorf("unable to fetch topic partitions: %s", err.Error())
 	}
 
 	// create consumers for every partition
-	numPartitions := len(metadata.Topics[src.Topic].Partitions)
-	consumers := make([]*kafkalib.Consumer, numPartitions)
-	partitions := make([]kafkalib.TopicPartition, numPartitions)
-	for i, partition := range metadata.Topics[src.Topic].Partitions {
+	consumers := make([]*kafkalib.Consumer, len(metadata))
+	partitions := make([]kafkalib.TopicPartition, len(metadata))
+	for i, meta := range metadata {
 		consumer, err := kafkalib.NewConsumer(&kafkalib.ConfigMap{
 			"bootstrap.servers":               src.BoostrapServers,
 			"group.id":                        uuid.NewV4(),
@@ -74,9 +69,8 @@ func Load(data []byte) (connection.Source, error) {
 
 		partition := kafkalib.TopicPartition{
 			Topic:     &src.Topic,
-			Partition: partition.ID,
+			Partition: meta.ID,
 		}
-
 		err = consumer.Assign([]kafkalib.TopicPartition{partition})
 		if err != nil {
 			return nil, fmt.Errorf("Kafka consumer couldn't assign partition: %s", err.Error())
@@ -94,24 +88,22 @@ func Load(data []byte) (connection.Source, error) {
 
 // Fetch retrieves the next document from the awskinesis source
 func (k Kafka) Fetch(ctx context.Context, partitionIndex uint, savedOffset string) (*connection.Records, error) {
-	partition := k.partitions[partitionIndex]
+	consumer := k.consumers[partitionIndex]
 
+	partition := k.partitions[partitionIndex]
 	if parsed, err := strconv.Atoi(savedOffset); err == nil {
 		partition.Offset = kafkalib.Offset(int64(parsed) + 1)
 	}
-
-	consumer := k.consumers[partitionIndex]
 
 	err := consumer.Assign([]kafkalib.TopicPartition{partition})
 	if err != nil {
 		return nil, fmt.Errorf("Kafka consumer couldn't assign partition: %s", err.Error())
 	}
 
-	var timeout time.Duration
+	timeout := 0 * time.Millisecond
 	if d, ok := ctx.Deadline(); ok {
 		timeout = time.Until(d)
 	}
-
 	msg, err := consumer.ReadMessage(timeout)
 	if err != nil {
 		if err.(kafkalib.Error).Code() == kafkalib.ErrTimedOut {
@@ -119,10 +111,6 @@ func (k Kafka) Fetch(ctx context.Context, partitionIndex uint, savedOffset strin
 		}
 		return nil, fmt.Errorf("Kafka consumer returned error: %s", err.Error())
 	}
-
-	fmt.Printf("%% Message on %s:\n%s\n", msg.TopicPartition, string(msg.Value))
-
-	fmt.Println(fmt.Sprintf("------------ RETURNED OFFSET %+v", msg.TopicPartition.Offset))
 
 	return &connection.Records{
 		Data:         [][]byte{msg.Value},
@@ -143,4 +131,18 @@ func (k Kafka) Close() error {
 		}
 	}
 	return nil
+}
+
+func (k Kafka) fetchPartitions(topic string, config kafkalib.ConfigMap) ([]kafkalib.PartitionMetadata, error) {
+	consumer, err := kafkalib.NewConsumer(&config)
+	if err != nil {
+		return nil, fmt.Errorf("unable to fetch topic partitions: %s", err.Error())
+	}
+	defer consumer.Close()
+
+	metadata, err := consumer.GetMetadata(&topic, false, 100000)
+	if err != nil {
+		return nil, fmt.Errorf("unable to create consumer: %s", err.Error())
+	}
+	return metadata.Topics[topic].Partitions, nil
 }
