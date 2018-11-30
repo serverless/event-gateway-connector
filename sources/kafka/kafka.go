@@ -18,8 +18,8 @@ type Kafka struct {
 	BoostrapServers      string `json:"bootstrapServers" validate:"required"`
 	Offset               string `json:"offset" validate:"eq=earliest|eq=latest"`
 	Topic                string `json:"topic" validate:"required"`
-	ConfluentCloudKey    string `json:"confluentCloudKey"`
-	ConfluentCloudSecret string `json:"confluentCloudSecret"`
+	ConfluentCloudKey    string `json:"confluentCloudKey,omitempty"`
+	ConfluentCloudSecret string `json:"confluentCloudSecret,omitempty"`
 
 	consumers  []*kafkalib.Consumer
 	partitions []kafkalib.TopicPartition
@@ -100,14 +100,20 @@ func (k Kafka) Fetch(ctx context.Context, partitionIndex uint, savedOffset strin
 		partition.Offset = kafkalib.Offset(int64(parsed) + 1)
 	}
 
+	if err := ctx.Err(); err != nil { // check if context is already canceled
+		return nil, err
+	}
 	err := consumer.Assign([]kafkalib.TopicPartition{partition})
 	if err != nil {
 		return nil, fmt.Errorf("Kafka consumer couldn't assign partition: %s", err.Error())
 	}
 
+	if err := ctx.Err(); err != nil { // check if context is already canceled
+		return nil, err
+	}
 	timeout := 0 * time.Millisecond
-	if d, ok := ctx.Deadline(); ok {
-		timeout = time.Until(d)
+	if deadline, ok := ctx.Deadline(); ok {
+		timeout = time.Until(deadline)
 	}
 	msg, err := consumer.ReadMessage(timeout)
 	if err != nil {

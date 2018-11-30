@@ -199,28 +199,28 @@ func (w *worker) run() {
 	defer w.waitGroup.Done()
 	defer close(w.done)
 
-	var data = &connection.Records{}
-	var err error
-	var checkpoint string
+	var cancel context.CancelFunc
 
 	for {
 		select {
 		case <-w.done:
 			w.log.Debugw("trapped done signal", "workerID", w.id)
+			cancel()
 			if err := w.connection.Source.Close(); err != nil {
 				w.log.Errorw("closing source failed", "workerID", w.id, "error", err.Error())
 			}
 			return
 		default:
-			checkpoint, err = w.checkpointKV.RetrieveCheckpoint(w.checkpointID)
+
+			checkpoint, err := w.checkpointKV.RetrieveCheckpoint(w.checkpointID)
 			if err != nil && err != kv.ErrKeyNotFound {
 				w.log.Debugw("worker checkpoint retrieve failed", "workerID", w.id, "checkpoint", checkpoint, "error", err.Error())
 			}
 
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
+			var ctx context.Context
+			ctx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
 
-			data, err = w.connection.Source.Fetch(ctx, w.id, checkpoint)
+			data, err := w.connection.Source.Fetch(ctx, w.id, checkpoint)
 			if err != nil {
 				w.log.Errorw("worker failed", "workerID", w.id, "error", err.Error())
 			}
@@ -240,7 +240,6 @@ func (w *worker) run() {
 
 			if err := w.checkpointKV.UpdateCheckpoint(w.checkpointID, data.LastSequence); err != nil {
 				w.log.Errorw("worker checkpoint update failed", "workerID", w.id, "checkpointID", w.checkpointID, "checkpoint", data.LastSequence, "error", err.Error())
-				return
 			}
 		}
 	}
