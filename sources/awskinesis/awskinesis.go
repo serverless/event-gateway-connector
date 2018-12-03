@@ -121,6 +121,6 @@ func (a AWSKinesis) NumberOfWorkers() uint {
 }
 
 // Close no-op.
-func (a AWSKinesis) Close() error {
+func (a AWSKinesis) Close(_ uint) error {
 	return nil
 }

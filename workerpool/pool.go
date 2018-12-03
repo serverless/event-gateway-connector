@@ -206,7 +206,7 @@ func (w *worker) run() {
 		case <-w.done:
 			w.log.Debugw("trapped done signal", "workerID", w.id)
 			cancel()
-			if err := w.connection.Source.Close(); err != nil {
+			if err := w.connection.Source.Close(w.id); err != nil {
 				w.log.Errorw("closing source failed", "workerID", w.id, "error", err.Error())
 			}
 			return

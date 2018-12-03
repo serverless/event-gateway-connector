@@ -100,9 +100,6 @@ func (k Kafka) Fetch(ctx context.Context, partitionIndex uint, savedOffset strin
 		partition.Offset = kafkalib.Offset(int64(parsed) + 1)
 	}
 
-	if err := ctx.Err(); err != nil { // check if context is already canceled
-		return nil, err
-	}
 	err := consumer.Assign([]kafkalib.TopicPartition{partition})
 	if err != nil {
 		return nil, fmt.Errorf("Kafka consumer couldn't assign partition: %s", err.Error())
@@ -135,11 +132,9 @@ func (k Kafka) NumberOfWorkers() uint {
 }
 
 // Close consumer.
-func (k Kafka) Close() error {
-	for _, customer := range k.consumers {
-		if err := customer.Close(); err != nil {
-			return err
-		}
+func (k Kafka) Close(partitionIndex uint) error {
+	if err := k.consumers[partitionIndex].Close(); err != nil {
+		return err
 	}
 	return nil
 }

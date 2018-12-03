@@ -110,6 +110,6 @@ func (a AWSCloudTrail) NumberOfWorkers() uint {
 }
 
 // Close no-op.
-func (a AWSCloudTrail) Close() error {
+func (a AWSCloudTrail) Close(_ uint) error {
 	return nil
 }
