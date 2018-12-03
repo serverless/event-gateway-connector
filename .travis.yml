@@ -1,16 +1,14 @@
 language: go
 go:
   - 1.11.x
-addons:
-  apt:
-    packages:
-    - librdkafka-dev
-env:
-  global:
-    - PKG_CONFIG_PATH="$HOME/gopath/src/github.com/confluentinc/confluent-kafka-go/tmp-build/lib/pkgconfig"
 cache:
   directories:
     - vendor
+before_install:
+  - wget -qO - http://packages.confluent.io/deb/3.2/archive.key | sudo apt-key add - # Use the confluent repository
+  - sudo add-apt-repository "deb [arch=amd64] http://packages.confluent.io/deb/3.2 stable main"
+  - sudo apt-get update -qq
+  - sudo apt-get install -y librdkafka-dev librdkafka1
 install:
   - curl https://raw.githubusercontent.com/golang/dep/v0.5.0/install.sh | sh
   - dep ensure -v
