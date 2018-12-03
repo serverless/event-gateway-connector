@@ -5,6 +5,9 @@ addons:
   apt:
     packages:
     - librdkafka-dev
+env:
+  global:
+    - PKG_CONFIG_PATH="$HOME/gopath/src/github.com/confluentinc/confluent-kafka-go/tmp-build/lib/pkgconfig"
 cache:
   directories:
     - vendor
