@@ -27,7 +27,7 @@ import (
 
 const jobsBucketSize = 5
 
-var maxWorkers = flag.UintP("workers", "w", 10, "Maximum number of workers for the pool.")
+var maxWorkers = flag.UintP("workers", "w", 100, "Maximum number of workers for the pool.")
 var port = flag.IntP("port", "p", 4002, "Port to serve configuration API on")
 var etcdClient = flag.StringP("etcd-hosts", "e", "localhost:2379", "Comma-delimited list of hosts in etcd cluster.")
 
