@@ -52,6 +52,14 @@
   revision = "3a771d992973f24aa725d07868b467d1ddfceafb"
 
 [[projects]]
+  digest = "1:ad9bac31f001ab730600bf9e80c4da7552cb9cb47c505f3fa0fe80de81682bbe"
+  name = "github.com/confluentinc/confluent-kafka-go"
+  packages = ["kafka"]
+  pruneopts = "UT"
+  revision = "460e8e43b282a1a68219df600ef63442b81faf5f"
+  version = "v0.11.6"
+
+[[projects]]
   digest = "1:f02ffb1b642c0ac436f24bb8b9a5b859aec7f64858e59ec9bd4b1ad6f29688cd"
   name = "github.com/coreos/etcd"
   packages = [
@@ -357,6 +365,7 @@
     "github.com/aws/aws-sdk-go/service/cloudtrail/cloudtrailiface",
     "github.com/aws/aws-sdk-go/service/kinesis",
     "github.com/aws/aws-sdk-go/service/kinesis/kinesisiface",
+    "github.com/confluentinc/confluent-kafka-go/kafka",
     "github.com/coreos/etcd/clientv3",
     "github.com/coreos/etcd/clientv3/concurrency",
     "github.com/coreos/etcd/clientv3/namespace",
@@ -365,8 +374,10 @@
     "github.com/ogier/pflag",
     "github.com/prometheus/client_golang/prometheus",
     "github.com/prometheus/client_golang/prometheus/promhttp",
+    "github.com/satori/go.uuid",
     "github.com/segmentio/ksuid",
     "github.com/serverless/event-gateway/event",
+    "github.com/serverless/event-gateway/metadata",
     "github.com/streadway/amqp",
     "go.uber.org/zap",
     "gopkg.in/go-playground/validator.v9",

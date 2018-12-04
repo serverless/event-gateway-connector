@@ -5,9 +5,9 @@ import "context"
 // Source is the default interface that each connection source (e.g. awskinesis, kafka) need
 // to satisfy in order to deliver events to the EG.
 type Source interface {
-	Fetch(context.Context, uint, string) (*Records, error)
+	Fetch(ctx context.Context, shardID uint, offset string) (*Records, error)
 	NumberOfWorkers() uint
-	Close() error
+	Close(shardID uint) error
 }
 
 // SourceType abstraction for the data sources

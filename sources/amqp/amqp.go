@@ -79,7 +79,7 @@ func (a *AMQP) NumberOfWorkers() uint {
 }
 
 // Close closes channel and connection to AMQP server.
-func (a *AMQP) Close() error {
+func (a *AMQP) Close(_ uint) error {
 	if err := a.connection.Close(); err != nil {
 		return nil
 	}
