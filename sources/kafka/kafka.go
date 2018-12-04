@@ -30,8 +30,7 @@ func init() {
 }
 
 // Load decodes the provided JSON data into valid Kafka format and creates Kafka
-// Consumer instance. Provided the connection is successful, we return an instance
-// of the connection.Source, othewise an error.
+// source instance. It creates separate Kafka consumer for every partition.
 func Load(data []byte) (connection.Source, error) {
 	var src Kafka
 	err := json.Unmarshal(data, &src)
@@ -63,7 +62,6 @@ func Load(data []byte) (connection.Source, error) {
 		return nil, fmt.Errorf("unable to fetch topic partitions: %s", err.Error())
 	}
 
-	// create consumers for every partition
 	consumers := make([]*kafkalib.Consumer, len(metadata))
 	partitions := make([]kafkalib.TopicPartition, len(metadata))
 	for i, meta := range metadata {
@@ -91,7 +89,7 @@ func Load(data []byte) (connection.Source, error) {
 	return src, nil
 }
 
-// Fetch retrieves the next document from the awskinesis source
+// Fetch retrieves the next document from the Kafka partition
 func (k Kafka) Fetch(ctx context.Context, partitionIndex uint, savedOffset string) (*connection.Records, error) {
 	consumer := k.consumers[partitionIndex]
 
@@ -126,7 +124,7 @@ func (k Kafka) Fetch(ctx context.Context, partitionIndex uint, savedOffset strin
 	}, nil
 }
 
-// NumberOfWorkers returns number of shards to handle by the pool
+// NumberOfWorkers returns number of partitions to handle by the pool
 func (k Kafka) NumberOfWorkers() uint {
 	return uint(len(k.consumers))
 }
