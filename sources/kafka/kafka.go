@@ -45,7 +45,7 @@ func Load(data []byte) (connection.Source, error) {
 	config := kafkalib.ConfigMap{
 		"bootstrap.servers":               src.BoostrapServers,
 		"group.id":                        uuid.NewV4(),
-		"session.timeout.ms":              5000,
+		"session.timeout.ms":              8000,
 		"go.application.rebalance.enable": true, // delegate Assign() responsibility to the source
 		"default.topic.config":            kafkalib.ConfigMap{"auto.offset.reset": src.Offset}}
 	if src.ConfluentCloudKey != "" && src.ConfluentCloudSecret != "" {
